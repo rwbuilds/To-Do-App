@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Notes Widget</title>
+    <style>
+        :root {
+            --bg: #1e1e2e;
+            --surface: #2a2a3c;
+            --surface-hover: #33334a;
+            --border: #3a3a52;
+            --text: #e2e2f0;
+            --text-dim: #8888a8;
+            --accent: #7c5cfc;
+            --accent-hover: #9070ff;
+            --danger: #f06060;
+            --danger-hover: #ff7070;
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --tag-blue: #38bdf8;
+            --tag-green: #4ade80;
+            --tag-orange: #fb923c;
+            --tag-pink: #f472b6;
+            --tag-purple: #a78bfa;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: transparent;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Electron native drag regions — buttons/inputs stay clickable */
+        #widget, .titlebar { -webkit-app-region: drag; }
+        #widget .badge, .titlebar-btn, button, input, select, textarea,
+        .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
+
+        /* Electron: window itself is sized to content, so anchor top-left */
+        body.electron #widget { top: 8px; left: 8px; right: auto; cursor: default; }
+        body.electron #app { top: 0; left: 0; right: auto; width: 100%; max-height: 100vh; height: 100vh; border-radius: 12px; }
+        body.electron #taskbar-btn { display: none !important; }
+
+        /* ===== WIDGET (collapsed state) ===== */
+        #widget {
+            position: fixed;
+            top: 50px;
+            right: 50px;
+            width: 56px;
+            height: 56px;
+            background: var(--accent);
+            border-radius: 16px;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(124, 92, 252, 0.4), 0 2px 8px rgba(0,0,0,0.3);
+            opacity: 0.85;
+            transition: opacity 0.2s, transform 0.2s, border-radius 0.3s;
+            z-index: 99999;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #widget:hover {
+            opacity: 1;
+            transform: scale(1.08);
+        }
+
+        #widget:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+
+        #widget .widget-icon {
+            font-size: 24px;
+            pointer-events: none;
+        }
+
+        #widget .badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 20px;
+            height: 20px;
+            background: var(--danger);
+            border-radius: 50%;
+            font-size: 11px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        #widget .badge.hidden { display: none; }
+
+        /* ===== EXPANDED APP ===== */
+        #app {
+            position: fixed;
+            top: 50px;
+            right: 50px;
+            width: 420px;
+            max-height: 680px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 4px 20px rgba(124, 92, 252, 0.15);
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 99999;
+            opacity: 0.92;
+            transition: opacity 0.2s;
+            animation: slideIn 0.2s ease-out;
+        }
+
+        #app:hover { opacity: 1; }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+            to { opacity: 0.92; transform: scale(1) translateY(0); }
+        }
+
+        /* Titlebar */
+        .titlebar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .titlebar:active { cursor: grabbing; }
+
+        .titlebar h1 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .titlebar-btns {
+            display: flex;
+            gap: 6px;
+        }
+
+        .titlebar-btn {
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 8px;
+            background: var(--surface-hover);
+            color: var(--text-dim);
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .titlebar-btn:hover { background: var(--border); color: var(--text); }
+        .titlebar-btn.close:hover { background: var(--danger); color: #fff; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            padding: 8px 12px 0;
+            gap: 4px;
+            background: var(--bg);
+        }
+
+        .tab {
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-dim);
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s;
+            border-radius: 6px 6px 0 0;
+        }
+
+        .tab:hover { color: var(--text); background: var(--surface); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--surface); }
+
+        /* Search/Filter bar */
+        .toolbar {
+            padding: 10px 14px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 7px 10px;
+            font-size: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus { border-color: var(--accent); }
+        .search-input::placeholder { color: var(--text-dim); }
+
+        .filter-btn {
+            padding: 6px 10px;
+            font-size: 11px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+        .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* Content area */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            min-height: 200px;
+            max-height: 420px;
+        }
+
+        .content::-webkit-scrollbar { width: 5px; }
+        .content::-webkit-scrollbar-track { background: transparent; }
+        .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* Todo items */
+        .todo-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: all 0.15s;
+            cursor: default;
+        }
+
+        .todo-item:hover { border-color: var(--accent); }
+        .todo-item.completed { opacity: 0.5; }
+        .todo-item.completed .todo-text { text-decoration: line-through; }
+
+        .todo-item.priority-high { border-left: 3px solid var(--danger); }
+        .todo-item.priority-medium { border-left: 3px solid var(--warning); }
+        .todo-item.priority-low { border-left: 3px solid var(--success); }
+
+        .todo-check {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--border);
+            border-radius: 5px;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-top: 2px;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .todo-check:hover { border-color: var(--accent); }
+        .todo-check.checked { background: var(--accent); border-color: var(--accent); }
+        .todo-check.checked::after { content: '✓'; color: #fff; font-size: 11px; font-weight: 700; }
+
+        .todo-body { flex: 1; min-width: 0; }
+        .todo-text { font-size: 13px; color: var(--text); word-wrap: break-word; }
+        
+        .todo-meta {
+            display: flex;
+            gap: 6px;
+            margin-top: 5px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .todo-tag {
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .todo-date {
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        .todo-date.overdue { color: var(--danger); font-weight: 600; }
+
+        .todo-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .todo-item:hover .todo-actions { opacity: 1; }
+
+        .todo-action-btn {
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 5px;
+            background: var(--bg);
+            color: var(--text-dim);
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .todo-action-btn:hover { color: var(--text); background: var(--border); }
+        .todo-action-btn.delete:hover { color: var(--danger); }
+
+        /* Notes */
+        .note-item {
+            position: relative;
+            padding: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .note-item:hover { border-color: var(--accent); }
+
+        .note-delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 5px;
+            background: var(--bg);
+            color: var(--text-dim);
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .note-item:hover .note-delete-btn { opacity: 1; }
+        .note-delete-btn:hover { color: var(--danger); background: rgba(240,96,96,0.1); }
+
+        .note-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .note-preview {
+            font-size: 11px;
+            color: var(--text-dim);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .note-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .note-footer .todo-date { font-size: 10px; }
+
+        /* Note Editor */
+        .note-editor {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .note-editor.active { display: flex; }
+
+        .note-editor-title {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 15px;
+            font-weight: 600;
+            background: none;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            outline: none;
+        }
+
+        .note-editor-body {
+            flex: 1;
+            padding: 14px;
+            font-size: 13px;
+            line-height: 1.6;
+            background: none;
+            border: none;
+            color: var(--text);
+            resize: none;
+            outline: none;
+            min-height: 250px;
+        }
+
+        .note-editor-body::placeholder { color: var(--text-dim); }
+
+        /* Add input */
+        .add-bar {
+            padding: 12px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .add-input {
+            flex: 1;
+            padding: 9px 12px;
+            font-size: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .add-input:focus { border-color: var(--accent); }
+        .add-input::placeholder { color: var(--text-dim); }
+
+        .add-btn {
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--accent);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .add-btn:hover { background: var(--accent-hover); }
+
+        /* Priority selector */
+        .priority-select {
+            padding: 7px 8px;
+            font-size: 11px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            outline: none;
+            cursor: pointer;
+        }
+
+        /* Due date */
+        .due-input {
+            padding: 6px 8px;
+            font-size: 11px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            outline: none;
+            cursor: pointer;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-dim);
+        }
+
+        .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+        .empty-state p { font-size: 13px; }
+
+        /* Stats bar */
+        .stats-bar {
+            padding: 8px 14px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        /* Minimized / Taskbar state */
+        #taskbar-btn {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 20px;
+            background: var(--accent);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(124, 92, 252, 0.4);
+            z-index: 99999;
+            transition: transform 0.15s;
+        }
+
+        #taskbar-btn:hover { transform: translateX(-50%) scale(1.05); }
+
+        /* Context menu */
+        .context-menu {
+            position: fixed;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            z-index: 999999;
+            display: none;
+            min-width: 150px;
+        }
+
+        .context-menu-item {
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.1s;
+        }
+
+        .context-menu-item:hover { background: var(--surface-hover); }
+        .context-menu-item.danger { color: var(--danger); }
+        .context-menu-item.danger:hover { background: rgba(240,96,96,0.1); }
+
+        .separator { height: 1px; background: var(--border); margin: 4px 0; }
+
+        /* Tag colors */
+        .tag-work { background: rgba(56,189,248,0.2); color: var(--tag-blue); }
+        .tag-personal { background: rgba(74,222,128,0.2); color: var(--tag-green); }
+        .tag-urgent { background: rgba(251,146,60,0.2); color: var(--tag-orange); }
+        .tag-ideas { background: rgba(244,114,182,0.2); color: var(--tag-pink); }
+        .tag-dco { background: rgba(167,139,250,0.2); color: var(--tag-purple); }
+
+        /* Group bar */
+        .group-bar {
+            padding: 6px 14px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .group-select {
+            flex: 1;
+            padding: 5px 8px;
+            font-size: 11px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            outline: none;
+            cursor: pointer;
+        }
+
+        .multi-select-toggle.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .copy-btn {
+            background: var(--success);
+            border-color: var(--success);
+            color: #000;
+            font-weight: 600;
+        }
+
+        .copy-btn:hover { background: #6ee7a0; border-color: #6ee7a0; }
+
+        .delete-selected-btn {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .delete-selected-btn:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+
+        .selected-count {
+            font-size: 11px;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* Multi-select checkbox on todo items */
+        .todo-select {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--accent);
+            border-radius: 4px;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-top: 3px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .multi-select-mode .todo-select { display: flex; }
+        .todo-select.selected { background: var(--accent); }
+        .todo-select.selected::after { content: '✓'; color: #fff; font-size: 10px; font-weight: 700; }
+
+        /* WIP badge */
+        .wip-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 700;
+            background: rgba(251,191,36,0.2);
+            color: var(--warning);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Group header in task list */
+        .group-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 4px 4px;
+            margin-top: 8px;
+        }
+
+        .group-header:first-child { margin-top: 0; }
+
+        .group-header .group-name {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .group-header .group-line {
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .group-header .group-count {
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        /* Todo item in WIP state */
+        .todo-item.wip {
+            border-left: 3px solid var(--warning);
+            background: rgba(251,191,36,0.03);
+        }
+    </style>
+</head>
+<body>
+
+<!-- Widget (collapsed) -->
+<div id="widget" onclick="expandApp()" title="Quick Notes">
+    <span class="widget-icon">📝</span>
+    <span class="badge hidden" id="badge">0</span>
+</div>
+
+<!-- Taskbar button (minimized) -->
+<button id="taskbar-btn" onclick="restoreApp()">
+    📝 Quick Notes
+</button>
+
+<!-- Expanded App -->
+<div id="app">
+    <div class="titlebar" id="titlebar">
+        <h1>📝 Quick Notes</h1>
+        <div class="titlebar-btns">
+            <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">🚀</button>
+            <button class="titlebar-btn" onclick="collapseToWidget()" title="Collapse to widget">⊟</button>
+            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize">—</button>
+            <button class="titlebar-btn close" onclick="collapseToWidget()" title="Close">✕</button>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" data-tab="todos" onclick="switchTab('todos')">Tasks</button>
+        <button class="tab" data-tab="notes" onclick="switchTab('notes')">Notes</button>
+    </div>
+
+    <!-- TODOS TAB -->
+    <div id="tab-todos">
+        <div class="toolbar">
+            <input type="text" class="search-input" id="searchTodos" placeholder="Search tasks..." oninput="renderTodos()">
+            <button class="filter-btn" id="filterAll" onclick="setFilter('all')">All</button>
+            <button class="filter-btn" id="filterActive" onclick="setFilter('active')">Active</button>
+            <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
+            <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
+        </div>
+
+        <!-- Group selector + multi-select bar -->
+        <div class="group-bar">
+            <select class="group-select" id="groupFilter" onchange="renderTodos()">
+                <option value="all">All Groups</option>
+            </select>
+            <button class="filter-btn multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()">☐ Select</button>
+        </div>
+
+        <!-- Multi-select action row (only shown in select mode) -->
+        <div class="group-bar" id="multiSelectBar" style="display:none;">
+            <button class="filter-btn" id="selectAllBtn" onclick="toggleSelectAll()">☑ Select All</button>
+            <span class="selected-count" id="selectedCount">0 selected</span>
+            <div style="flex:1;"></div>
+            <button class="filter-btn copy-btn" id="copyBtn" onclick="copySelected()">📋 Copy</button>
+            <button class="filter-btn delete-selected-btn" id="deleteSelectedBtn" onclick="deleteSelected()">🗑 Delete</button>
+        </div>
+
+        <div class="content" id="todoList"></div>
+
+        <div class="add-bar" style="flex-wrap:wrap;">
+            <input type="text" class="add-input" id="todoInput" placeholder="Add a task... (use #tag for tags)" onkeydown="if(event.key==='Enter')addTodo()" style="min-width:120px;">
+            <select class="priority-select" id="prioritySelect">
+                <option value="none">—</option>
+                <option value="low">Low</option>
+                <option value="medium">Med</option>
+                <option value="high">High</option>
+            </select>
+            <select class="priority-select" id="groupSelect">
+                <option value="">No Group</option>
+            </select>
+            <input type="date" class="due-input" id="dueInput">
+            <button class="add-btn" onclick="addTodo()">Add</button>
+        </div>
+
+        <!-- Add Group -->
+        <div class="add-bar" style="border-top:none; padding-top:0;">
+            <input type="text" class="add-input" id="newGroupInput" placeholder="New group name..." onkeydown="if(event.key==='Enter')addGroup()" style="font-size:11px;">
+            <button class="filter-btn" onclick="addGroup()">+ Group</button>
+        </div>
+
+        <div class="stats-bar" id="todoStats"></div>
+    </div>
+
+    <!-- NOTES TAB -->
+    <div id="tab-notes" style="display:none;">
+        <div class="toolbar">
+            <input type="text" class="search-input" id="searchNotes" placeholder="Search notes..." oninput="renderNotes()">
+            <button class="add-btn" onclick="createNote()" style="font-size:11px;">+ New</button>
+        </div>
+
+        <div class="content" id="noteList"></div>
+        
+        <div class="note-editor" id="noteEditor">
+            <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
+            <textarea class="note-editor-body" id="noteBody" placeholder="Start writing..." oninput="saveCurrentNote()"></textarea>
+            <div class="add-bar">
+                <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
+                <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 chars</span>
+                <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Context Menu -->
+<div class="context-menu" id="contextMenu">
+    <div class="context-menu-item" onclick="ctxToggleWip()">🔧 Toggle WIP</div>
+    <div class="separator"></div>
+    <div class="context-menu-item" onclick="ctxSetPriority('high')">🔴 High Priority</div>
+    <div class="context-menu-item" onclick="ctxSetPriority('medium')">🟡 Medium Priority</div>
+    <div class="context-menu-item" onclick="ctxSetPriority('low')">🟢 Low Priority</div>
+    <div class="separator"></div>
+    <div class="context-menu-item" onclick="ctxDuplicate()">📄 Duplicate</div>
+    <div class="context-menu-item" onclick="ctxCopy()">📋 Copy Text</div>
+    <div class="context-menu-item danger" onclick="ctxDelete()">🗑️ Delete</div>
+</div>
+
+<script>
+// ===== DATA STORE =====
+const STORAGE_KEY = 'quicknotes_data';
+
+let data = loadData();
+let currentFilter = 'all';
+let currentTab = 'todos';
+let editingNoteId = null;
+let contextTargetId = null;
+let appState = 'widget'; // 'widget', 'expanded', 'minimized'
+let multiSelectMode = false;
+let selectedIds = new Set();
+
+function loadData() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            const d = JSON.parse(saved);
+            if (!d.groups) d.groups = [];
+            return d;
+        }
+    } catch(e) {}
+    return { todos: [], notes: [], groups: [] };
+}
+
+function saveData() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    updateBadge();
+}
+
+// ===== APP STATE MANAGEMENT =====
+function expandApp() {
+    document.getElementById('widget').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('taskbar-btn').style.display = 'none';
+    appState = 'expanded';
+    if (window.widgetAPI) window.widgetAPI.resizeWindow('expanded');
+    renderAll();
+}
+
+function collapseToWidget() {
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('widget').style.display = 'flex';
+    document.getElementById('taskbar-btn').style.display = 'none';
+    appState = 'widget';
+    if (window.widgetAPI) window.widgetAPI.resizeWindow('widget');
+}
+
+function minimizeToTaskbar() {
+    // In Electron: hide the window to the system tray
+    if (window.widgetAPI) {
+        window.widgetAPI.minimizeToTray();
+        return;
+    }
+    // Browser fallback
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('widget').style.display = 'none';
+    document.getElementById('taskbar-btn').style.display = 'flex';
+    appState = 'minimized';
+}
+
+function restoreApp() {
+    expandApp();
+}
+
+// ===== BADGE =====
+function updateBadge() {
+    const active = data.todos.filter(t => !t.completed).length;
+    const badge = document.getElementById('badge');
+    if (active > 0) {
+        badge.textContent = active > 9 ? '9+' : active;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+// ===== TABS =====
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.getElementById('tab-todos').style.display = tab === 'todos' ? '' : 'none';
+    document.getElementById('tab-notes').style.display = tab === 'notes' ? '' : 'none';
+    if (tab === 'notes') {
+        document.getElementById('noteEditor').classList.remove('active');
+        document.getElementById('noteList').style.display = '';
+        renderNotes();
+    }
+}
+
+// ===== FILTERS =====
+function setFilter(filter) {
+    currentFilter = filter;
+    document.getElementById('filterAll').classList.toggle('active', filter === 'all');
+    document.getElementById('filterActive').classList.toggle('active', filter === 'active');
+    document.getElementById('filterWip').classList.toggle('active', filter === 'wip');
+    document.getElementById('filterDone').classList.toggle('active', filter === 'done');
+    renderTodos();
+}
+
+// ===== TODOS =====
+function addTodo() {
+    const input = document.getElementById('todoInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    // Extract tags from text (e.g. #work #urgent)
+    const tags = [];
+    const cleanText = text.replace(/#(\w+)/g, (_, tag) => {
+        tags.push(tag.toLowerCase());
+        return '';
+    }).trim();
+
+    const priority = document.getElementById('prioritySelect').value;
+    const dueDate = document.getElementById('dueInput').value || null;
+    const group = document.getElementById('groupSelect').value || '';
+
+    data.todos.unshift({
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        text: cleanText || text,
+        completed: false,
+        wip: false,
+        priority: priority,
+        tags: tags,
+        group: group,
+        dueDate: dueDate,
+        createdAt: new Date().toISOString(),
+    });
+
+    input.value = '';
+    document.getElementById('prioritySelect').value = 'none';
+    document.getElementById('dueInput').value = '';
+    saveData();
+    renderTodos();
+}
+
+// ===== GROUPS =====
+function addGroup() {
+    const input = document.getElementById('newGroupInput');
+    const name = input.value.trim();
+    if (!name) return;
+    if (!data.groups.includes(name)) {
+        data.groups.push(name);
+        saveData();
+        refreshGroupSelectors();
+        renderTodos();
+    }
+    input.value = '';
+}
+
+function deleteGroup(name) {
+    data.groups = data.groups.filter(g => g !== name);
+    // Ungroup tasks that were in this group
+    data.todos.forEach(t => { if (t.group === name) t.group = ''; });
+    saveData();
+    refreshGroupSelectors();
+    renderTodos();
+}
+
+function refreshGroupSelectors() {
+    // Add-bar group dropdown
+    const addSel = document.getElementById('groupSelect');
+    const curAdd = addSel.value;
+    addSel.innerHTML = '<option value="">No Group</option>' +
+        data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+    addSel.value = curAdd;
+
+    // Filter dropdown
+    const filterSel = document.getElementById('groupFilter');
+    const curFilter = filterSel.value;
+    filterSel.innerHTML = '<option value="all">All Groups</option>' +
+        '<option value="__none__">Ungrouped</option>' +
+        data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+    filterSel.value = curFilter || 'all';
+}
+
+// ===== WIP =====
+function toggleWip(id) {
+    const todo = data.todos.find(t => t.id === id);
+    if (todo) {
+        todo.wip = !todo.wip;
+        if (todo.wip) todo.completed = false;
+        saveData();
+        renderTodos();
+    }
+}
+
+function toggleTodo(id) {
+    const todo = data.todos.find(t => t.id === id);
+    if (todo) {
+        todo.completed = !todo.completed;
+        if (todo.completed) todo.completedAt = new Date().toISOString();
+        else delete todo.completedAt;
+        saveData();
+        renderTodos();
+    }
+}
+
+function deleteTodo(id) {
+    data.todos = data.todos.filter(t => t.id !== id);
+    saveData();
+    renderTodos();
+}
+
+function renderTodos() {
+    const search = document.getElementById('searchTodos').value.toLowerCase();
+    const groupFilter = document.getElementById('groupFilter').value;
+
+    let todos = data.todos.filter(t => {
+        if (currentFilter === 'active' && (t.completed || t.wip)) return false;
+        if (currentFilter === 'wip' && !t.wip) return false;
+        if (currentFilter === 'done' && !t.completed) return false;
+        if (groupFilter === '__none__' && t.group) return false;
+        if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
+        if (search && !t.text.toLowerCase().includes(search) && !t.tags.some(tag => tag.includes(search))) return false;
+        return true;
+    });
+
+    const container = document.getElementById('todoList');
+    container.classList.toggle('multi-select-mode', multiSelectMode);
+
+    if (todos.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">${currentFilter === 'done' ? '🎉' : currentFilter === 'wip' ? '🔧' : '✨'}</div><p>${currentFilter === 'done' ? 'No completed tasks yet' : currentFilter === 'wip' ? 'Nothing in progress' : 'No tasks — add one below!'}</p></div>`;
+    } else {
+        // Group tasks by their group field
+        const grouped = {};
+        const ungrouped = [];
+        todos.forEach(t => {
+            if (t.group) {
+                if (!grouped[t.group]) grouped[t.group] = [];
+                grouped[t.group].push(t);
+            } else {
+                ungrouped.push(t);
+            }
+        });
+
+        let html = '';
+        // Grouped sections first (in group order)
+        data.groups.forEach(g => {
+            if (grouped[g] && grouped[g].length) {
+                html += renderGroupHeader(g, grouped[g].length);
+                html += grouped[g].map(renderTodoItem).join('');
+            }
+        });
+        // Ungrouped
+        if (ungrouped.length) {
+            if (data.groups.length) html += renderGroupHeader('Ungrouped', ungrouped.length, true);
+            html += ungrouped.map(renderTodoItem).join('');
+        }
+        container.innerHTML = html;
+    }
+
+    // Stats
+    const total = data.todos.length;
+    const done = data.todos.filter(t => t.completed).length;
+    const wip = data.todos.filter(t => t.wip).length;
+    const overdue = data.todos.filter(t => t.dueDate && !t.completed && new Date(t.dueDate) < new Date()).length;
+    document.getElementById('todoStats').innerHTML = `
+        <span>${done}/${total} done · ${wip} WIP</span>
+        <span>${overdue > 0 ? `⚠️ ${overdue} overdue` : '✓ All on track'}</span>
+    `;
+
+    updateSelectedCount();
+}
+
+function renderGroupHeader(name, count, ungrouped) {
+    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:20px;height:20px;">🗑</button>`;
+    return `<div class="group-header">
+        <span class="group-name">${escapeHtml(name)}</span>
+        <span class="group-count">${count}</span>
+        <div class="group-line"></div>
+        ${delBtn}
+    </div>`;
+}
+
+function renderTodoItem(t) {
+    const priorityClass = t.priority !== 'none' && t.priority ? `priority-${t.priority}` : '';
+    const isOverdue = t.dueDate && !t.completed && new Date(t.dueDate) < new Date();
+    const isSelected = selectedIds.has(t.id);
+    return `
+        <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass}" oncontextmenu="showContextMenu(event, '${t.id}')">
+            <div class="todo-select ${isSelected ? 'selected' : ''}" onclick="toggleSelect('${t.id}')"></div>
+            <div class="todo-check ${t.completed ? 'checked' : ''}" onclick="toggleTodo('${t.id}')"></div>
+            <div class="todo-body">
+                <div class="todo-text">${escapeHtml(t.text)}</div>
+                <div class="todo-meta">
+                    ${t.wip ? '<span class="wip-badge">WIP</span>' : ''}
+                    ${t.tags.map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
+                    ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}</span>` : ''}
+                </div>
+            </div>
+            <div class="todo-actions">
+                <button class="todo-action-btn" onclick="toggleWip('${t.id}')" title="Toggle WIP">🔧</button>
+                <button class="todo-action-btn delete" onclick="deleteTodo('${t.id}')" title="Delete">🗑</button>
+            </div>
+        </div>
+    `;
+}
+
+// ===== MULTI-SELECT & COPY =====
+function toggleMultiSelect() {
+    multiSelectMode = !multiSelectMode;
+    if (!multiSelectMode) selectedIds.clear();
+    document.getElementById('multiSelectBtn').classList.toggle('active', multiSelectMode);
+    document.getElementById('multiSelectBtn').textContent = multiSelectMode ? '☑ Selecting' : '☐ Select';
+    document.getElementById('multiSelectBar').style.display = multiSelectMode ? '' : 'none';
+    renderTodos();
+}
+
+function toggleSelectAll() {
+    // Get currently visible todos
+    const search = document.getElementById('searchTodos').value.toLowerCase();
+    const groupFilter = document.getElementById('groupFilter').value;
+    const visible = data.todos.filter(t => {
+        if (currentFilter === 'active' && (t.completed || t.wip)) return false;
+        if (currentFilter === 'wip' && !t.wip) return false;
+        if (currentFilter === 'done' && !t.completed) return false;
+        if (groupFilter === '__none__' && t.group) return false;
+        if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
+        if (search && !t.text.toLowerCase().includes(search) && !t.tags.some(tag => tag.includes(search))) return false;
+        return true;
+    });
+
+    const allSelected = visible.every(t => selectedIds.has(t.id));
+    if (allSelected) {
+        // Deselect all visible
+        visible.forEach(t => selectedIds.delete(t.id));
+        document.getElementById('selectAllBtn').textContent = '☑ Select All';
+    } else {
+        // Select all visible
+        visible.forEach(t => selectedIds.add(t.id));
+        document.getElementById('selectAllBtn').textContent = '☐ Deselect All';
+    }
+    renderTodos();
+}
+
+function deleteSelected() {
+    if (selectedIds.size === 0) return;
+    data.todos = data.todos.filter(t => !selectedIds.has(t.id));
+    selectedIds.clear();
+    saveData();
+    renderTodos();
+}
+
+function toggleSelect(id) {
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    renderTodos();
+}
+
+function updateSelectedCount() {
+    const el = document.getElementById('selectedCount');
+    if (el) el.textContent = `${selectedIds.size} selected`;
+
+    // Keep Select All label in sync with visible selection
+    const btn = document.getElementById('selectAllBtn');
+    if (btn && multiSelectMode) {
+        const search = document.getElementById('searchTodos').value.toLowerCase();
+        const groupFilter = document.getElementById('groupFilter').value;
+        const visible = data.todos.filter(t => {
+            if (currentFilter === 'active' && (t.completed || t.wip)) return false;
+            if (currentFilter === 'wip' && !t.wip) return false;
+            if (currentFilter === 'done' && !t.completed) return false;
+            if (groupFilter === '__none__' && t.group) return false;
+            if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
+            if (search && !t.text.toLowerCase().includes(search) && !t.tags.some(tag => tag.includes(search))) return false;
+            return true;
+        });
+        const allSelected = visible.length > 0 && visible.every(t => selectedIds.has(t.id));
+        btn.textContent = allSelected ? '☐ Deselect All' : '☑ Select All';
+    }
+}
+
+function copySelected() {
+    if (selectedIds.size === 0) {
+        alert('No tasks selected. Tap tasks to select them first.');
+        return;
+    }
+    // Preserve list order, numbered format (1. 2. 3.)
+    const selected = data.todos.filter(t => selectedIds.has(t.id));
+    const lines = selected.map((t, i) => {
+        let line = `${i + 1}. ${t.text}`;
+        if (t.wip) line += ' (WIP)';
+        if (t.tags.length) line += ' ' + t.tags.map(tag => '#' + tag).join(' ');
+        if (t.dueDate) line += ` (due ${formatDate(t.dueDate)})`;
+        return line;
+    });
+    const text = lines.join('\n');
+
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyBtn');
+        const orig = btn.textContent;
+        btn.textContent = `✓ Copied ${selectedIds.size}`;
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+    }).catch(() => {
+        // Fallback for browsers/contexts without clipboard API
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = `✓ Copied ${selectedIds.size}`;
+        setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500);
+    });
+}
+
+// ===== NOTES =====
+function createNote() {
+    const note = {
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        title: '',
+        body: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+    data.notes.unshift(note);
+    saveData();
+    openNoteEditor(note.id);
+}
+
+function openNoteEditor(id) {
+    editingNoteId = id;
+    const note = data.notes.find(n => n.id === id);
+    if (!note) return;
+
+    document.getElementById('noteList').style.display = 'none';
+    document.querySelector('#tab-notes .toolbar').style.display = 'none';
+    const editor = document.getElementById('noteEditor');
+    editor.classList.add('active');
+    document.getElementById('noteTitle').value = note.title;
+    document.getElementById('noteBody').value = note.body;
+    updateCharCount();
+}
+
+function closeNoteEditor() {
+    editingNoteId = null;
+    document.getElementById('noteEditor').classList.remove('active');
+    document.getElementById('noteList').style.display = '';
+    document.querySelector('#tab-notes .toolbar').style.display = '';
+    renderNotes();
+}
+
+function saveCurrentNote() {
+    if (!editingNoteId) return;
+    const note = data.notes.find(n => n.id === editingNoteId);
+    if (!note) return;
+    note.title = document.getElementById('noteTitle').value;
+    note.body = document.getElementById('noteBody').value;
+    note.updatedAt = new Date().toISOString();
+    saveData();
+    updateCharCount();
+}
+
+function deleteCurrentNote() {
+    if (!editingNoteId) return;
+    data.notes = data.notes.filter(n => n.id !== editingNoteId);
+    saveData();
+    closeNoteEditor();
+}
+
+function deleteNote(id) {
+    data.notes = data.notes.filter(n => n.id !== id);
+    saveData();
+    renderNotes();
+}
+
+function updateCharCount() {
+    const body = document.getElementById('noteBody').value;
+    document.getElementById('noteCharCount').textContent = `${body.length} chars · ${body.split(/\s+/).filter(w=>w).length} words`;
+}
+
+function renderNotes() {
+    const search = document.getElementById('searchNotes').value.toLowerCase();
+    let notes = data.notes.filter(n => {
+        if (search && !n.title.toLowerCase().includes(search) && !n.body.toLowerCase().includes(search)) return false;
+        return true;
+    });
+
+    const container = document.getElementById('noteList');
+    if (notes.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">📒</div><p>No notes yet — click + New to start</p></div>`;
+    } else {
+        container.innerHTML = notes.map(n => `
+            <div class="note-item" onclick="openNoteEditor('${n.id}')">
+                <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note">🗑</button>
+                <div class="note-title">${escapeHtml(n.title) || 'Untitled'}</div>
+                <div class="note-preview">${escapeHtml(n.body.substring(0, 80)) || 'Empty note...'}</div>
+                <div class="note-footer">
+                    <span class="todo-date">${timeAgo(n.updatedAt)}</span>
+                    <span class="todo-date">${n.body.split(/\s+/).filter(w=>w).length} words</span>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+
+// ===== CONTEXT MENU =====
+function showContextMenu(e, id) {
+    e.preventDefault();
+    contextTargetId = id;
+    const menu = document.getElementById('contextMenu');
+    menu.style.display = 'block';
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+}
+
+function hideContextMenu() {
+    document.getElementById('contextMenu').style.display = 'none';
+    contextTargetId = null;
+}
+
+function ctxSetPriority(p) {
+    const todo = data.todos.find(t => t.id === contextTargetId);
+    if (todo) { todo.priority = p; saveData(); renderTodos(); }
+    hideContextMenu();
+}
+
+function ctxDuplicate() {
+    const todo = data.todos.find(t => t.id === contextTargetId);
+    if (todo) {
+        const dup = { ...todo, id: Date.now().toString(36) + Math.random().toString(36).substr(2,5), completed: false, createdAt: new Date().toISOString() };
+        delete dup.completedAt;
+        data.todos.unshift(dup);
+        saveData(); renderTodos();
+    }
+    hideContextMenu();
+}
+
+function ctxDelete() {
+    deleteTodo(contextTargetId);
+    hideContextMenu();
+}
+
+function ctxToggleWip() {
+    toggleWip(contextTargetId);
+    hideContextMenu();
+}
+
+function ctxCopy() {
+    const todo = data.todos.find(t => t.id === contextTargetId);
+    if (todo) {
+        let line = todo.text;
+        if (todo.tags.length) line += ' ' + todo.tags.map(t => '#' + t).join(' ');
+        navigator.clipboard.writeText(line).catch(() => {});
+    }
+    hideContextMenu();
+}
+
+document.addEventListener('click', hideContextMenu);
+
+// ===== DRAG FUNCTIONALITY =====
+function makeDraggable(el, handleEl) {
+    let isDragging = false, startX, startY, origX, origY;
+    
+    (handleEl || el).addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = el.getBoundingClientRect();
+        origX = rect.left;
+        origY = rect.top;
+        el.style.cursor = 'grabbing';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        let dx = e.clientX - startX;
+        let dy = e.clientY - startY;
+        let newX = origX + dx;
+        let newY = origY + dy;
+        // Keep on screen
+        newX = Math.max(0, Math.min(window.innerWidth - el.offsetWidth, newX));
+        newY = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, newY));
+        el.style.left = newX + 'px';
+        el.style.top = newY + 'px';
+        el.style.right = 'auto';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            el.style.cursor = '';
+        }
+    });
+}
+
+// Only use JS-based dragging in browser mode.
+// In Electron, the OS handles window dragging via -webkit-app-region: drag.
+if (!window.widgetAPI) {
+    makeDraggable(document.getElementById('widget'));
+    makeDraggable(document.getElementById('app'), document.getElementById('titlebar'));
+}
+
+// ===== HELPERS =====
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    
+    if (d.toDateString() === today.toDateString()) return 'Today';
+    if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function timeAgo(dateStr) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function getTagColor(tag) {
+    const colors = ['work', 'personal', 'urgent', 'ideas', 'dco'];
+    const map = { work: 'work', personal: 'personal', urgent: 'urgent', idea: 'ideas', ideas: 'ideas', dco: 'dco', oncall: 'dco' };
+    return map[tag] || colors[Math.abs(hashStr(tag)) % colors.length];
+}
+
+function hashStr(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    return hash;
+}
+
+// ===== KEYBOARD SHORTCUTS =====
+document.addEventListener('keydown', (e) => {
+    // Escape to collapse
+    if (e.key === 'Escape') {
+        if (editingNoteId) closeNoteEditor();
+        else if (appState === 'expanded') collapseToWidget();
+    }
+    // Ctrl+N for new note
+    if (e.ctrlKey && e.key === 'n' && appState === 'expanded') {
+        e.preventDefault();
+        switchTab('notes');
+        createNote();
+    }
+});
+
+// ===== RENDER ALL =====
+function renderAll() {
+    refreshGroupSelectors();
+    renderTodos();
+    renderNotes();
+    updateBadge();
+    setFilter('all');
+}
+
+// ===== INIT =====
+refreshGroupSelectors();
+updateBadge();
+
+// Electron-specific setup
+if (window.widgetAPI) {
+    document.body.classList.add('electron');
+    // Start collapsed as a widget; the native window is already widget-sized
+    window.widgetAPI.resizeWindow('widget');
+
+    // Show + sync the "launch at startup" toggle
+    const alBtn = document.getElementById('autoLaunchBtn');
+    alBtn.style.display = '';
+    window.widgetAPI.getAutoLaunch().then(enabled => {
+        alBtn.style.opacity = enabled ? '1' : '0.4';
+        alBtn.title = enabled ? 'Launch at startup: ON' : 'Launch at startup: OFF';
+    });
+}
+
+function toggleAutoLaunch() {
+    if (!window.widgetAPI) return;
+    window.widgetAPI.getAutoLaunch().then(enabled => {
+        const next = !enabled;
+        window.widgetAPI.setAutoLaunch(next);
+        const alBtn = document.getElementById('autoLaunchBtn');
+        alBtn.style.opacity = next ? '1' : '0.4';
+        alBtn.title = next ? 'Launch at startup: ON' : 'Launch at startup: OFF';
+    });
+}
+</script>
+</body>
+</html>

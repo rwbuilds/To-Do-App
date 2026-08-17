@@ -1,0 +1,42 @@
+{
+  "name": "quick-notes-widget",
+  "productName": "Quick Notes Widget",
+  "version": "1.0.0",
+  "description": "A draggable, always-on-top todo & notes widget",
+  "main": "main.js",
+  "author": "rushanwi",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.4.0",
+    "@electron-forge/maker-squirrel": "^7.4.0",
+    "@electron-forge/maker-zip": "^7.4.0",
+    "electron": "^31.0.0"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "name": "Quick Notes Widget",
+        "executableName": "quick-notes-widget",
+        "asar": true
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "quick_notes_widget",
+            "setupExe": "QuickNotesWidgetSetup.exe"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": ["win32"]
+        }
+      ]
+    }
+  }
+}
