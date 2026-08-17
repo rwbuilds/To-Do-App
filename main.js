@@ -6,6 +6,8 @@ let mainWindow = null;
 let tray = null;
 let alwaysOnTop = true;
 let isExpanded = false;   // explicit expanded/widget state for reliable blur handling
+let isEditingNote = false; // renderer tells us when a note editor is open
+let suppressCollapse = false; // set briefly during file dialogs / link opens
 
 // ===== SETTINGS PERSISTENCE =====
 // Stored in the OS user-data folder so it survives reinstalls.
@@ -113,11 +115,13 @@ function createWindow() {
     mainWindow.hide();
   }
 
-  // Clicking away (losing focus) collapses the expanded app back to the widget
+  // Clicking away (losing focus) collapses the expanded app back to the widget.
+  // Do the collapse in the main process directly so it doesn't depend on
+  // an IPC round-trip; also notify the renderer to swap its UI to widget mode.
   mainWindow.on('blur', () => {
     if (!mainWindow || !isExpanded) return;
-    // Tell the renderer to collapse (it handles the note-editing guard + UI swap)
-    mainWindow.webContents.send('collapse-on-blur');
+    if (isEditingNote || suppressCollapse) return;
+    collapseToWidgetFromMain();
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -162,6 +166,26 @@ function showWindow() {
   if (!mainWindow) createWindow();
   mainWindow.show();
   mainWindow.focus();
+}
+
+// Collapse to widget from the main process (used on blur / click-away)
+function collapseToWidgetFromMain() {
+  if (!mainWindow) return;
+  const [curX, curY] = mainWindow.getPosition();
+  const { workArea } = screen.getDisplayNearestPoint({ x: curX, y: curY });
+
+  isExpanded = false;
+  mainWindow.setMinimumSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
+  mainWindow.setResizable(false);
+
+  let x = widgetAnchor ? widgetAnchor.x : curX;
+  let y = widgetAnchor ? widgetAnchor.y : curY;
+  x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - WIDGET_SIZE.width, x));
+  y = Math.max(workArea.y, Math.min(workArea.y + workArea.height - WIDGET_SIZE.height, y));
+  mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: WIDGET_SIZE.width, height: WIDGET_SIZE.height });
+
+  // Tell the renderer to swap its UI to widget mode
+  mainWindow.webContents.send('force-widget-ui');
 }
 
 // ===== IPC: renderer asks main to resize/minimize =====
@@ -300,6 +324,17 @@ ipcMain.on('open-external', (event, url) => {
   if (url && /^https?:\/\//i.test(url)) {
     require('electron').shell.openExternal(url);
   }
+});
+
+// Renderer tells us when a note editor is open (so we don't collapse mid-edit)
+ipcMain.on('set-editing', (event, editing) => {
+  isEditingNote = !!editing;
+});
+
+// Briefly suppress click-away collapse (during file dialogs / link opens)
+ipcMain.on('suppress-collapse', () => {
+  suppressCollapse = true;
+  setTimeout(() => { suppressCollapse = false; }, 1500);
 });
 
 // ===== APP LIFECYCLE =====

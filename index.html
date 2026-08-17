@@ -782,18 +782,15 @@
             cursor: pointer;
         }
 
-        /* Group tabs — single line, horizontal scroll if needed */
+        /* Group tabs — wrap onto multiple rows when out of horizontal space */
         .group-tabs {
             flex: 1;
             display: flex;
+            flex-wrap: wrap;
             gap: 6px;
             align-items: center;
             min-width: 0;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scrollbar-width: none;
         }
-        .group-tabs::-webkit-scrollbar { height: 0; display: none; }
         .group-tab {
             flex-shrink: 0;
             padding: 6px 12px;
@@ -1009,8 +1006,8 @@
         </div>
 
         <!-- Group tabs + add-group + multi-select -->
-        <div class="group-bar" style="display:flex; flex-direction:row; align-items:center; gap:6px;">
-            <div class="group-tabs" id="groupTabs" style="display:flex; flex-direction:row; align-items:center; gap:6px; flex:1; min-width:0; overflow-x:auto;"></div>
+        <div class="group-bar" style="display:flex; flex-direction:row; align-items:flex-start; gap:6px;">
+            <div class="group-tabs" id="groupTabs" style="display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:6px; flex:1; min-width:0;"></div>
             <button class="icon-pill" id="addGroupBtn" onclick="promptAddGroup()" title="Add group">+</button>
             <button class="icon-pill multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()" title="Select multiple">☑</button>
         </div>
@@ -1330,8 +1327,17 @@ function addTodo() {
 
     const priority = document.getElementById('prioritySelect').value;
     const dueDate = document.getElementById('dueInput').value || null;
-    const group = document.getElementById('groupSelect').value || '';
     const repeat = document.getElementById('repeatSelect').value || 'none';
+
+    // Group: use the explicit choice from the options dropdown if set;
+    // otherwise default to the currently-selected group tab (if it's a real group).
+    let group = document.getElementById('groupSelect').value || '';
+    if (!group) {
+        const activeTab = document.getElementById('groupFilter').value;
+        if (activeTab && activeTab !== 'all' && activeTab !== '__none__') {
+            group = activeTab;
+        }
+    }
 
     data.todos.unshift({
         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
@@ -1856,6 +1862,7 @@ function createNote() {
 
 function openNoteEditor(id) {
     editingNoteId = id;
+    if (window.widgetAPI && window.widgetAPI.setEditing) window.widgetAPI.setEditing(true);
     const note = data.notes.find(n => n.id === id);
     if (!note) return;
 
@@ -1874,6 +1881,7 @@ function openNoteEditor(id) {
 
 function closeNoteEditor() {
     editingNoteId = null;
+    if (window.widgetAPI && window.widgetAPI.setEditing) window.widgetAPI.setEditing(false);
     document.getElementById('noteEditor').classList.remove('active');
     document.getElementById('noteList').style.display = '';
     document.querySelector('#tab-notes .toolbar').style.display = '';
@@ -2430,6 +2438,22 @@ if (window.widgetAPI) {
             if (appState === 'expanded') collapseToWidget();
         });
     }
+    // Main process handles the actual window resize on blur; this just swaps the UI.
+    if (window.widgetAPI.onForceWidgetUI) {
+        window.widgetAPI.onForceWidgetUI(() => {
+            collapseUIOnly();
+        });
+    }
+}
+
+// Swap to widget UI without asking main to resize (main already did it on blur)
+function collapseUIOnly() {
+    document.body.classList.add('widget-mode');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('widget').style.display = 'flex';
+    const toast = document.getElementById('undoToast');
+    if (toast) toast.classList.remove('show');
+    appState = 'widget';
 }
 
 // Set true briefly while a native dialog (file picker) is open so the
@@ -2438,6 +2462,8 @@ let suppressBlurCollapse = false;
 function guardBlur() {
     suppressBlurCollapse = true;
     setTimeout(() => { suppressBlurCollapse = false; }, 1500);
+    // Also tell the main process so its blur handler doesn't collapse
+    if (window.widgetAPI && window.widgetAPI.suppressCollapse) window.widgetAPI.suppressCollapse();
 }
 
 function toggleAutoLaunch() {

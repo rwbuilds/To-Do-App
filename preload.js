@@ -14,5 +14,8 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   autoBackup: (jsonString) => ipcRenderer.send('auto-backup', jsonString),
   openBackupsFolder: () => ipcRenderer.send('open-backups-folder'),
   onCollapseOnBlur: (cb) => ipcRenderer.on('collapse-on-blur', cb),
+  onForceWidgetUI: (cb) => ipcRenderer.on('force-widget-ui', cb),
+  setEditing: (editing) => ipcRenderer.send('set-editing', editing),
+  suppressCollapse: () => ipcRenderer.send('suppress-collapse'),
   openExternal: (url) => ipcRenderer.send('open-external', url),
 });
