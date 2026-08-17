@@ -47,7 +47,7 @@ function launchedAtStartup() {
 }
 
 // Window sizes for the two states
-const WIDGET_SIZE = { width: 72, height: 72 };
+const WIDGET_SIZE = { width: 56, height: 56 };
 const EXPANDED_SIZE = { width: 440, height: 700 };
 const MIN_EXPANDED = { width: 320, height: 400 };
 
