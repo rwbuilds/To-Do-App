@@ -1,7 +1,7 @@
 {
-  "name": "quick-notes-widget",
-  "productName": "Quick Notes Widget",
-  "version": "1.0.0",
+  "name": "jot",
+  "productName": "Jot",
+  "version": "1.1.0",
   "description": "A draggable, always-on-top todo & notes widget",
   "main": "main.js",
   "author": "rushanwi",
@@ -20,16 +20,18 @@
   "config": {
     "forge": {
       "packagerConfig": {
-        "name": "Quick Notes Widget",
-        "executableName": "quick-notes-widget",
+        "name": "Jot",
+        "executableName": "jot",
+        "icon": "icon",
         "asar": true
       },
       "makers": [
         {
           "name": "@electron-forge/maker-squirrel",
           "config": {
-            "name": "quick_notes_widget",
-            "setupExe": "QuickNotesWidgetSetup.exe"
+            "name": "jot",
+            "setupExe": "JotSetup.exe",
+            "setupIcon": "icon.ico"
           }
         },
         {

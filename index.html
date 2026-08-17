@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quick Notes Widget</title>
+    <title>Jot</title>
     <style>
         :root {
             --bg: #1e1e2e;
@@ -51,7 +51,17 @@
         }
         body.electron #app:hover { opacity: 1; }
         body.electron #taskbar-btn { display: none !important; }
-        body.electron .content { max-height: none; flex: 1; }
+        body.electron .content { max-height: none; flex: 1; min-height: 0; }
+        /* Tab panels fill the window so content scrolls and the add bar stays pinned */
+        body.electron #tab-todos,
+        body.electron #tab-notes { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        body.electron #tab-todos.tab-hidden,
+        body.electron #tab-notes.tab-hidden { display: none; }
+        body.electron .tabs { flex-shrink: 0; }
+        body.electron .toolbar,
+        body.electron .group-bar,
+        body.electron .add-bar,
+        body.electron .stats-bar { flex-shrink: 0; }
 
         /* ===== WIDGET (collapsed state) ===== */
         #widget {
@@ -299,6 +309,17 @@
 
         .todo-body { flex: 1; min-width: 0; }
         .todo-text { font-size: 13px; color: var(--text); word-wrap: break-word; }
+
+        .todo-edit-input {
+            width: 100%;
+            font-size: 13px;
+            background: var(--bg);
+            border: 1px solid var(--accent);
+            border-radius: 5px;
+            color: var(--text);
+            padding: 3px 6px;
+            outline: none;
+        }
         
         .todo-meta {
             display: flex;
@@ -554,6 +575,7 @@
 
         /* Context menu */
         .context-menu {
+        .context-menu {
             position: fixed;
             background: var(--surface);
             border: 1px solid var(--border);
@@ -589,6 +611,65 @@
         .tag-urgent { background: rgba(251,146,60,0.2); color: var(--tag-orange); }
         .tag-ideas { background: rgba(244,114,182,0.2); color: var(--tag-pink); }
         .tag-dco { background: rgba(167,139,250,0.2); color: var(--tag-purple); }
+
+        /* Undo toast */
+        .toast {
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            z-index: 999999;
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 0.25s, opacity 0.25s;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .toast button {
+            background: var(--accent);
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .toast button:hover { background: var(--accent-hover); }
+
+        /* Markdown preview pane */
+        .note-preview-pane {
+            flex: 1;
+            padding: 14px;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text);
+        }
+        .note-preview-pane h1 { font-size: 20px; margin: 8px 0; }
+        .note-preview-pane h2 { font-size: 17px; margin: 8px 0; }
+        .note-preview-pane h3 { font-size: 15px; margin: 6px 0; }
+        .note-preview-pane ul { margin: 6px 0 6px 20px; }
+        .note-preview-pane li { margin: 3px 0; }
+        .note-preview-pane code {
+            background: var(--surface); padding: 1px 5px; border-radius: 4px;
+            font-family: monospace; font-size: 12px;
+        }
+        .note-preview-pane a { color: var(--accent); }
+        .note-preview-pane .md-check { margin-right: 6px; }
 
         /* Group bar */
         .group-bar {
@@ -712,27 +793,30 @@
 <body>
 
 <!-- Widget (collapsed) -->
-<div id="widget" onclick="expandApp()" title="Quick Notes">
-    <span class="widget-icon">📝</span>
+<div id="widget" onclick="expandApp()" title="Jot">
+    <span class="widget-icon">✍️</span>
     <span class="badge hidden" id="badge">0</span>
 </div>
 
 <!-- Taskbar button (minimized) -->
 <button id="taskbar-btn" onclick="restoreApp()">
-    📝 Quick Notes
+    ✍️ Jot
 </button>
 
 <!-- Expanded App -->
 <div id="app">
     <div class="titlebar" id="titlebar">
-        <h1>📝 Quick Notes</h1>
+        <h1>✍️ Jot</h1>
         <div class="titlebar-btns">
+            <button class="titlebar-btn" id="backupBtn" onclick="exportData()" title="Backup to file">💾</button>
+            <button class="titlebar-btn" id="restoreBtn" onclick="document.getElementById('importFile').click()" title="Restore from file">📂</button>
             <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">🚀</button>
             <button class="titlebar-btn" onclick="collapseToWidget()" title="Collapse to widget">⊟</button>
             <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize">—</button>
             <button class="titlebar-btn close" onclick="collapseToWidget()" title="Close">✕</button>
         </div>
     </div>
+    <input type="file" id="importFile" accept="application/json" style="display:none;" onchange="importData(event)">
 
     <div class="tabs">
         <button class="tab active" data-tab="todos" onclick="switchTab('todos')">Tasks</button>
@@ -779,6 +863,12 @@
             <select class="priority-select" id="groupSelect">
                 <option value="">No Group</option>
             </select>
+            <select class="priority-select" id="repeatSelect" title="Repeat">
+                <option value="none">↻ Once</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+            </select>
             <input type="date" class="due-input" id="dueInput">
             <button class="add-btn" onclick="addTodo()">Add</button>
         </div>
@@ -793,7 +883,7 @@
     </div>
 
     <!-- NOTES TAB -->
-    <div id="tab-notes" style="display:none;">
+    <div id="tab-notes" class="tab-hidden" style="display:none;">
         <div class="toolbar">
             <input type="text" class="search-input" id="searchNotes" placeholder="Search notes..." oninput="renderNotes()">
             <button class="add-btn" onclick="createNote()" style="font-size:11px;">+ New</button>
@@ -803,14 +893,22 @@
         
         <div class="note-editor" id="noteEditor">
             <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
-            <textarea class="note-editor-body" id="noteBody" placeholder="Start writing..." oninput="saveCurrentNote()"></textarea>
+            <textarea class="note-editor-body" id="noteBody" placeholder="Start writing... (Markdown supported: # heading, **bold**, *italic*, - list, [ ] checkbox, `code`)" oninput="saveCurrentNote()"></textarea>
+            <div class="note-preview-pane" id="notePreview" style="display:none;"></div>
             <div class="add-bar">
                 <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
+                <button class="filter-btn" id="mdToggleBtn" onclick="toggleMarkdownPreview()" title="Toggle Markdown preview">👁 Preview</button>
                 <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 chars</span>
                 <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
             </div>
         </div>
     </div>
+</div>
+
+<!-- Undo toast -->
+<div class="toast" id="undoToast">
+    <span id="toastMsg">Deleted</span>
+    <button onclick="undoLastDelete()">Undo</button>
 </div>
 
 <!-- Context Menu -->
@@ -854,6 +952,86 @@ function loadData() {
 function saveData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     updateBadge();
+}
+
+// ===== BACKUP / RESTORE =====
+function exportData() {
+    const payload = JSON.stringify({ ...data, _exportedAt: new Date().toISOString(), _app: 'Jot', _v: 1 }, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.download = `jot-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Backup downloaded', null);
+}
+
+function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const imported = JSON.parse(e.target.result);
+            if (!imported.todos && !imported.notes) throw new Error('Not a Jot backup');
+            if (!confirm('Restore this backup? It will replace your current tasks and notes.')) return;
+            data = {
+                todos: imported.todos || [],
+                notes: imported.notes || [],
+                groups: imported.groups || [],
+            };
+            saveData();
+            refreshGroupSelectors();
+            renderTodos();
+            renderNotes();
+            showToast('Backup restored', null);
+        } catch (err) {
+            alert('Could not restore: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // allow re-importing same file
+}
+
+// ===== UNDO (for deletes) =====
+let lastDeleted = null;   // { type: 'todos'|'notes', items: [...] }
+let toastTimer = null;
+
+function showToast(msg, undoPayload) {
+    const toast = document.getElementById('undoToast');
+    document.getElementById('toastMsg').textContent = msg;
+    lastDeleted = undoPayload;
+    // Hide the Undo button when there's nothing to undo
+    toast.querySelector('button').style.display = undoPayload ? '' : 'none';
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+        lastDeleted = null;
+    }, 5000);
+}
+
+function undoLastDelete() {
+    if (!lastDeleted) return;
+    if (lastDeleted.type === 'todos') {
+        // Re-insert at original positions
+        lastDeleted.items.forEach(({ item, index }) => {
+            data.todos.splice(Math.min(index, data.todos.length), 0, item);
+        });
+    } else if (lastDeleted.type === 'notes') {
+        lastDeleted.items.forEach(({ item, index }) => {
+            data.notes.splice(Math.min(index, data.notes.length), 0, item);
+        });
+    }
+    saveData();
+    renderTodos();
+    renderNotes();
+    lastDeleted = null;
+    document.getElementById('undoToast').classList.remove('show');
 }
 
 // ===== APP STATE MANAGEMENT =====
@@ -907,8 +1085,13 @@ function updateBadge() {
 function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-    document.getElementById('tab-todos').style.display = tab === 'todos' ? '' : 'none';
-    document.getElementById('tab-notes').style.display = tab === 'notes' ? '' : 'none';
+    const todosEl = document.getElementById('tab-todos');
+    const notesEl = document.getElementById('tab-notes');
+    todosEl.classList.toggle('tab-hidden', tab !== 'todos');
+    notesEl.classList.toggle('tab-hidden', tab !== 'notes');
+    // keep non-electron inline behavior working too
+    todosEl.style.display = tab === 'todos' ? '' : 'none';
+    notesEl.style.display = tab === 'notes' ? '' : 'none';
     if (tab === 'notes') {
         document.getElementById('noteEditor').classList.remove('active');
         document.getElementById('noteList').style.display = '';
@@ -942,6 +1125,7 @@ function addTodo() {
     const priority = document.getElementById('prioritySelect').value;
     const dueDate = document.getElementById('dueInput').value || null;
     const group = document.getElementById('groupSelect').value || '';
+    const repeat = document.getElementById('repeatSelect').value || 'none';
 
     data.todos.unshift({
         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
@@ -952,12 +1136,14 @@ function addTodo() {
         tags: tags,
         group: group,
         dueDate: dueDate,
+        repeat: repeat,
         createdAt: new Date().toISOString(),
     });
 
     input.value = '';
     document.getElementById('prioritySelect').value = 'none';
     document.getElementById('dueInput').value = '';
+    document.getElementById('repeatSelect').value = 'none';
     saveData();
     renderTodos();
 }
@@ -1017,17 +1203,83 @@ function toggleTodo(id) {
     const todo = data.todos.find(t => t.id === id);
     if (todo) {
         todo.completed = !todo.completed;
-        if (todo.completed) todo.completedAt = new Date().toISOString();
-        else delete todo.completedAt;
+        if (todo.completed) {
+            todo.completedAt = new Date().toISOString();
+            // Recurring task → spawn the next occurrence
+            if (todo.repeat && todo.repeat !== 'none') {
+                spawnNextOccurrence(todo);
+            }
+        } else {
+            delete todo.completedAt;
+        }
         saveData();
         renderTodos();
     }
 }
 
+function spawnNextOccurrence(todo) {
+    // Compute next due date from the current one (or today)
+    let base = todo.dueDate ? new Date(todo.dueDate) : new Date();
+    if (todo.repeat === 'daily') base.setDate(base.getDate() + 1);
+    else if (todo.repeat === 'weekly') base.setDate(base.getDate() + 7);
+    else if (todo.repeat === 'monthly') base.setMonth(base.getMonth() + 1);
+
+    const nextDue = base.toISOString().slice(0, 10);
+    // Avoid duplicating if an identical open recurrence already exists
+    const dup = data.todos.some(t => t.text === todo.text && t.repeat === todo.repeat && !t.completed && t.dueDate === nextDue);
+    if (dup) return;
+
+    data.todos.unshift({
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        text: todo.text,
+        completed: false,
+        wip: false,
+        priority: todo.priority,
+        tags: [...(todo.tags || [])],
+        group: todo.group || '',
+        dueDate: nextDue,
+        repeat: todo.repeat,
+        createdAt: new Date().toISOString(),
+    });
+    showToast('↻ Next occurrence scheduled for ' + formatDate(nextDue), null);
+}
+
 function deleteTodo(id) {
-    data.todos = data.todos.filter(t => t.id !== id);
+    const index = data.todos.findIndex(t => t.id === id);
+    if (index === -1) return;
+    const item = data.todos[index];
+    data.todos.splice(index, 1);
     saveData();
     renderTodos();
+    showToast('Task deleted', { type: 'todos', items: [{ item, index }] });
+}
+
+// ===== INLINE EDIT =====
+function startEditTodo(id, textEl) {
+    const todo = data.todos.find(t => t.id === id);
+    if (!todo) return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = todo.text;
+    input.className = 'todo-edit-input';
+    textEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const commit = () => {
+        const val = input.value.trim();
+        if (val) todo.text = val;
+        saveData();
+        renderTodos();
+    };
+    const cancel = () => renderTodos();
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', commit);
 }
 
 function renderTodos() {
@@ -1106,13 +1358,22 @@ function renderTodoItem(t) {
     const isOverdue = t.dueDate && !t.completed && new Date(t.dueDate) < new Date();
     const isSelected = selectedIds.has(t.id);
     return `
-        <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass}" oncontextmenu="showContextMenu(event, '${t.id}')">
+        <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass}"
+             draggable="true"
+             data-id="${t.id}"
+             oncontextmenu="showContextMenu(event, '${t.id}')"
+             ondragstart="onTodoDragStart(event, '${t.id}')"
+             ondragover="onTodoDragOver(event, '${t.id}')"
+             ondragleave="onTodoDragLeave(event)"
+             ondrop="onTodoDrop(event, '${t.id}')"
+             ondragend="onTodoDragEnd(event)">
             <div class="todo-select ${isSelected ? 'selected' : ''}" onclick="toggleSelect('${t.id}')"></div>
             <div class="todo-check ${t.completed ? 'checked' : ''}" onclick="toggleTodo('${t.id}')"></div>
             <div class="todo-body">
-                <div class="todo-text">${escapeHtml(t.text)}</div>
+                <div class="todo-text" ondblclick="startEditTodo('${t.id}', this)" title="Double-click to edit">${escapeHtml(t.text)}</div>
                 <div class="todo-meta">
                     ${t.wip ? '<span class="wip-badge">WIP</span>' : ''}
+                    ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:rgba(124,92,252,0.2);color:var(--accent);">↻ ${t.repeat}</span>` : ''}
                     ${t.tags.map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
                     ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}</span>` : ''}
                 </div>
@@ -1123,6 +1384,54 @@ function renderTodoItem(t) {
             </div>
         </div>
     `;
+}
+
+// ===== DRAG TO REORDER =====
+let dragSrcId = null;
+
+function onTodoDragStart(e, id) {
+    dragSrcId = id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.4';
+}
+
+function onTodoDragOver(e, id) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.style.borderTop = '2px solid var(--accent)';
+}
+
+function onTodoDragLeave(e) {
+    e.currentTarget.style.borderTop = '';
+}
+
+function onTodoDrop(e, targetId) {
+    e.preventDefault();
+    e.currentTarget.style.borderTop = '';
+    if (!dragSrcId || dragSrcId === targetId) return;
+
+    const srcIdx = data.todos.findIndex(t => t.id === dragSrcId);
+    const tgtIdx = data.todos.findIndex(t => t.id === targetId);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+
+    // Only allow reordering within the same group (keeps groups intact)
+    if ((data.todos[srcIdx].group || '') !== (data.todos[tgtIdx].group || '')) {
+        // Moving across groups → adopt the target's group
+        data.todos[srcIdx].group = data.todos[tgtIdx].group || '';
+    }
+
+    const [moved] = data.todos.splice(srcIdx, 1);
+    const newTgtIdx = data.todos.findIndex(t => t.id === targetId);
+    data.todos.splice(newTgtIdx, 0, moved);
+
+    saveData();
+    renderTodos();
+}
+
+function onTodoDragEnd(e) {
+    e.currentTarget.style.opacity = '';
+    document.querySelectorAll('.todo-item').forEach(el => el.style.borderTop = '');
+    dragSrcId = null;
 }
 
 // ===== MULTI-SELECT & COPY =====
@@ -1164,10 +1473,17 @@ function toggleSelectAll() {
 
 function deleteSelected() {
     if (selectedIds.size === 0) return;
+    // Capture items + their indices for undo
+    const removed = [];
+    data.todos.forEach((t, index) => {
+        if (selectedIds.has(t.id)) removed.push({ item: t, index });
+    });
+    const count = removed.length;
     data.todos = data.todos.filter(t => !selectedIds.has(t.id));
     selectedIds.clear();
     saveData();
     renderTodos();
+    showToast(`${count} task${count > 1 ? 's' : ''} deleted`, { type: 'todos', items: removed });
 }
 
 function toggleSelect(id) {
@@ -1259,11 +1575,17 @@ function openNoteEditor(id) {
     editor.classList.add('active');
     document.getElementById('noteTitle').value = note.title;
     document.getElementById('noteBody').value = note.body;
+    // Always open in edit mode
+    markdownPreviewOn = false;
+    document.getElementById('noteBody').style.display = '';
+    document.getElementById('notePreview').style.display = 'none';
+    document.getElementById('mdToggleBtn').textContent = '👁 Preview';
     updateCharCount();
 }
 
 function closeNoteEditor() {
     editingNoteId = null;
+    markdownPreviewOn = false;
     document.getElementById('noteEditor').classList.remove('active');
     document.getElementById('noteList').style.display = '';
     document.querySelector('#tab-notes .toolbar').style.display = '';
@@ -1289,14 +1611,81 @@ function deleteCurrentNote() {
 }
 
 function deleteNote(id) {
-    data.notes = data.notes.filter(n => n.id !== id);
+    const index = data.notes.findIndex(n => n.id === id);
+    if (index === -1) return;
+    const item = data.notes[index];
+    data.notes.splice(index, 1);
     saveData();
     renderNotes();
+    showToast('Note deleted', { type: 'notes', items: [{ item, index }] });
 }
 
 function updateCharCount() {
     const body = document.getElementById('noteBody').value;
     document.getElementById('noteCharCount').textContent = `${body.length} chars · ${body.split(/\s+/).filter(w=>w).length} words`;
+    // Keep preview in sync if it's open
+    if (markdownPreviewOn) renderMarkdownPreview();
+}
+
+// ===== MARKDOWN =====
+let markdownPreviewOn = false;
+
+function renderMarkdown(src) {
+    // Escape HTML first
+    let html = src
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const lines = html.split('\n');
+    let out = [];
+    let inList = false;
+
+    const inline = (s) => s
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    for (let line of lines) {
+        if (/^###\s+/.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h3>' + inline(line.replace(/^###\s+/, '')) + '</h3>'); }
+        else if (/^##\s+/.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h2>' + inline(line.replace(/^##\s+/, '')) + '</h2>'); }
+        else if (/^#\s+/.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h1>' + inline(line.replace(/^#\s+/, '')) + '</h1>'); }
+        else if (/^\s*[-*]\s+\[[ xX]\]\s+/.test(line)) {
+            if (!inList) { out.push('<ul style="list-style:none;margin-left:0;">'); inList = true; }
+            const checked = /\[[xX]\]/.test(line);
+            const txt = line.replace(/^\s*[-*]\s+\[[ xX]\]\s+/, '');
+            out.push(`<li><input type="checkbox" class="md-check" ${checked ? 'checked' : ''} disabled>${inline(txt)}</li>`);
+        }
+        else if (/^\s*[-*]\s+/.test(line)) {
+            if (!inList) { out.push('<ul>'); inList = true; }
+            out.push('<li>' + inline(line.replace(/^\s*[-*]\s+/, '')) + '</li>');
+        }
+        else if (line.trim() === '') { if (inList) { out.push('</ul>'); inList = false; } out.push('<br>'); }
+        else { if (inList) { out.push('</ul>'); inList = false; } out.push('<div>' + inline(line) + '</div>'); }
+    }
+    if (inList) out.push('</ul>');
+    return out.join('');
+}
+
+function renderMarkdownPreview() {
+    const body = document.getElementById('noteBody').value;
+    document.getElementById('notePreview').innerHTML = renderMarkdown(body);
+}
+
+function toggleMarkdownPreview() {
+    markdownPreviewOn = !markdownPreviewOn;
+    const ta = document.getElementById('noteBody');
+    const pv = document.getElementById('notePreview');
+    const btn = document.getElementById('mdToggleBtn');
+    if (markdownPreviewOn) {
+        renderMarkdownPreview();
+        ta.style.display = 'none';
+        pv.style.display = '';
+        btn.textContent = '✏️ Edit';
+    } else {
+        ta.style.display = '';
+        pv.style.display = 'none';
+        btn.textContent = '👁 Preview';
+    }
 }
 
 function renderNotes() {
@@ -1452,6 +1841,9 @@ if (!window.widgetAPI) {
         if (dragging && !moved) {
             // It was a click, not a drag → open the app
             expandApp();
+        } else if (dragging && moved) {
+            // Snap the widget to the nearest screen edge
+            window.widgetAPI.snapWidget();
         }
         dragging = false;
     });
@@ -1542,6 +1934,12 @@ if (window.widgetAPI) {
         alBtn.style.opacity = enabled ? '1' : '0.4';
         alBtn.title = enabled ? 'Launch at startup: ON' : 'Launch at startup: OFF';
     });
+
+    // Daily auto-backup — main process only writes once per day
+    try {
+        const payload = JSON.stringify({ ...data, _app: 'Jot', _v: 1, _auto: true });
+        window.widgetAPI.autoBackup(payload);
+    } catch (e) {}
 }
 
 function toggleAutoLaunch() {

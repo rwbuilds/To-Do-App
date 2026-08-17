@@ -1,4 +1,4 @@
-# Quick Notes Widget — Windows Desktop App
+# Jot — Windows Desktop App
 
 A draggable, always-on-top todo & notes widget built with Electron.
 
@@ -29,7 +29,7 @@ npm run make
 ```
 The installer will be created at:
 ```
-out\make\squirrel.windows\x64\QuickNotesWidgetSetup.exe
+out\make\squirrel.windows\x64\JotSetup.exe
 ```
 Double-click that `.exe` to install. The app then runs from the Start Menu and lives in your system tray.
 
@@ -51,14 +51,14 @@ Don't want to install Node or build locally? Let GitHub build the `.exe` for you
    git push -u origin main
    ```
 3. GitHub automatically runs the workflow in `.github/workflows/build-windows.yml` on a Windows machine.
-4. Go to the repo's **Actions** tab → click the latest run → scroll to **Artifacts** → download **`QuickNotesWidget-Windows-Installer`**.
-5. Unzip it, then double-click `QuickNotesWidgetSetup.exe` to install.
+4. Go to the repo's **Actions** tab → click the latest run → scroll to **Artifacts** → download **`Jot-Windows-Installer`**.
+5. Unzip it, then double-click `JotSetup.exe` to install.
 
 You can also trigger a build manually anytime: **Actions** tab → *Build Windows App* → **Run workflow**.
 
 The workflow produces two artifacts:
-- **QuickNotesWidget-Windows-Installer** — the `.exe` installer
-- **QuickNotesWidget-Windows-Portable** — a zipped app you can run without installing
+- **Jot-Windows-Installer** — the `.exe` installer
+- **Jot-Windows-Portable** — a zipped app you can run without installing
 
 ## Optional: custom icon
 Drop a 256×256 PNG named `icon.png` in this folder before building to set the app + tray icon. Without it, a blank tray icon is used.

@@ -1,8 +1,28 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, globalShortcut } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let mainWindow = null;
 let tray = null;
+let alwaysOnTop = true;
+
+// ===== SETTINGS PERSISTENCE =====
+// Stored in the OS user-data folder so it survives reinstalls.
+const settingsPath = () => path.join(app.getPath('userData'), 'jot-settings.json');
+
+function loadSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSettings(patch) {
+  const cur = loadSettings();
+  const next = { ...cur, ...patch };
+  try { fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2)); } catch (e) {}
+}
 
 // ===== AUTO-LAUNCH ON STARTUP =====
 // Uses Electron's built-in login item settings (writes the Windows
@@ -29,17 +49,24 @@ function launchedAtStartup() {
 // Window sizes for the two states
 const WIDGET_SIZE = { width: 72, height: 72 };
 const EXPANDED_SIZE = { width: 440, height: 700 };
+const MIN_EXPANDED = { width: 320, height: 400 };
+
+// Remembers where the widget sat so we can restore it on collapse
+let widgetAnchor = null;
 
 function createWindow() {
+  const settings = loadSettings();
+
   mainWindow = new BrowserWindow({
     width: WIDGET_SIZE.width,
     height: WIDGET_SIZE.height,
     frame: false,              // no OS title bar — we draw our own
     transparent: true,         // allows the rounded/transparent widget
-    resizable: false,
+    resizable: false,          // toggled on when expanded
     alwaysOnTop: true,         // real always-on-top
     skipTaskbar: false,
     hasShadow: false,          // no OS shadow — we style our own
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -53,9 +80,30 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Position in top-right by default
-  const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
-  mainWindow.setPosition(sw - WIDGET_SIZE.width - 40, 60);
+  // Restore saved widget position, or default to top-right
+  if (settings.widgetX != null && settings.widgetY != null) {
+    widgetAnchor = { x: settings.widgetX, y: settings.widgetY };
+    mainWindow.setPosition(settings.widgetX, settings.widgetY);
+  } else {
+    const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
+    mainWindow.setPosition(sw - WIDGET_SIZE.width - 40, 60);
+  }
+
+  // Remember the user's custom expanded size if they resized before
+  if (settings.expandedW && settings.expandedH) {
+    EXPANDED_SIZE.width = settings.expandedW;
+    EXPANDED_SIZE.height = settings.expandedH;
+  }
+
+  // Persist expanded size when the user resizes
+  mainWindow.on('resize', () => {
+    if (mainWindow.isResizable()) {
+      const [w, h] = mainWindow.getSize();
+      saveSettings({ expandedW: w, expandedH: h });
+      EXPANDED_SIZE.width = w;
+      EXPANDED_SIZE.height = h;
+    }
+  });
 
   // If launched by Windows at startup, stay hidden in the tray
   if (launchedAtStartup()) {
@@ -66,22 +114,24 @@ function createWindow() {
 }
 
 function createTray() {
-  // A simple 1x1 fallback icon so it works even without an icon file
   let icon;
   try {
     icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png'));
     if (icon.isEmpty()) throw new Error('empty');
+    // Tray icons look best small
+    icon = icon.resize({ width: 16, height: 16 });
   } catch (e) {
     icon = nativeImage.createEmpty();
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('Quick Notes Widget');
+  tray.setToolTip('Jot');
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show Widget', click: () => showWindow() },
-    { label: 'Always on Top', type: 'checkbox', checked: true, click: (item) => {
-        if (mainWindow) mainWindow.setAlwaysOnTop(item.checked, 'screen-saver');
+    { label: 'Always on Top', type: 'checkbox', checked: alwaysOnTop, click: (item) => {
+        alwaysOnTop = item.checked;
+        if (mainWindow) mainWindow.setAlwaysOnTop(alwaysOnTop, 'screen-saver');
       }
     },
     { label: 'Launch at Startup', type: 'checkbox', checked: isAutoLaunchEnabled(), click: (item) => {
@@ -107,16 +157,45 @@ function showWindow() {
 // ===== IPC: renderer asks main to resize/minimize =====
 ipcMain.on('resize-window', (event, state) => {
   if (!mainWindow) return;
-  let [x, y] = mainWindow.getPosition();
-  const targetW = state === 'expanded' ? EXPANDED_SIZE.width : WIDGET_SIZE.width;
-  const targetH = state === 'expanded' ? EXPANDED_SIZE.height : WIDGET_SIZE.height;
-  mainWindow.setSize(targetW, targetH);
+  const [curX, curY] = mainWindow.getPosition();
+  const { workArea } = screen.getDisplayNearestPoint({ x: curX, y: curY });
 
-  // Keep the window fully on the current display
-  const { workArea } = screen.getDisplayNearestPoint({ x, y });
-  x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - targetW, x));
-  y = Math.max(workArea.y, Math.min(workArea.y + workArea.height - targetH, y));
-  mainWindow.setPosition(x, y);
+  if (state === 'expanded') {
+    // Remember where the widget was, so collapse can restore it exactly
+    widgetAnchor = { x: curX, y: curY };
+
+    mainWindow.setResizable(true);
+    mainWindow.setMinimumSize(MIN_EXPANDED.width, MIN_EXPANDED.height);
+    mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height);
+
+    // Anchor: keep the widget's top-left, but if that puts the window
+    // off-screen, shift it back in. Prefer expanding from the widget corner.
+    let x = curX;
+    let y = curY;
+    // If widget was near the right edge, expand leftward so it stays visible
+    if (x + EXPANDED_SIZE.width > workArea.x + workArea.width) {
+      x = workArea.x + workArea.width - EXPANDED_SIZE.width;
+    }
+    if (y + EXPANDED_SIZE.height > workArea.y + workArea.height) {
+      y = workArea.y + workArea.height - EXPANDED_SIZE.height;
+    }
+    x = Math.max(workArea.x, x);
+    y = Math.max(workArea.y, y);
+    mainWindow.setPosition(Math.round(x), Math.round(y));
+
+  } else { // widget
+    // Clear the minimum first, otherwise the window can't shrink to widget size
+    mainWindow.setMinimumSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
+    mainWindow.setResizable(false);
+    mainWindow.setSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
+
+    // Restore the widget to its remembered position (clamped on-screen)
+    let x = widgetAnchor ? widgetAnchor.x : curX;
+    let y = widgetAnchor ? widgetAnchor.y : curY;
+    x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - WIDGET_SIZE.width, x));
+    y = Math.max(workArea.y, Math.min(workArea.y + workArea.height - WIDGET_SIZE.height, y));
+    mainWindow.setPosition(Math.round(x), Math.round(y));
+  }
 });
 
 ipcMain.on('minimize-to-tray', () => {
@@ -127,11 +206,52 @@ ipcMain.on('minimize-to-tray', () => {
 ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
   if (!mainWindow) return;
   // Place the window so the cursor keeps the same grab offset
-  mainWindow.setPosition(Math.round(mouseX - offsetX), Math.round(mouseY - offsetY));
+  const nx = Math.round(mouseX - offsetX);
+  const ny = Math.round(mouseY - offsetY);
+  mainWindow.setPosition(nx, ny);
+  // If we're in widget mode, remember this as the anchor + persist it
+  if (!mainWindow.isResizable()) {
+    widgetAnchor = { x: nx, y: ny };
+    saveSettings({ widgetX: nx, widgetY: ny });
+  }
 });
 
 ipcMain.on('set-always-on-top', (event, value) => {
+  alwaysOnTop = value;
   if (mainWindow) mainWindow.setAlwaysOnTop(value, 'screen-saver');
+});
+
+// Snap the widget to the nearest screen edge after dragging
+ipcMain.on('snap-widget', () => {
+  if (!mainWindow || mainWindow.isResizable()) return; // only in widget mode
+  const [x, y] = mainWindow.getPosition();
+  const [w, h] = mainWindow.getSize();
+  const { workArea } = screen.getDisplayNearestPoint({ x, y });
+  const margin = 12;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+
+  // Distance to each edge
+  const distLeft = cx - workArea.x;
+  const distRight = (workArea.x + workArea.width) - cx;
+  const distTop = cy - workArea.y;
+  const distBottom = (workArea.y + workArea.height) - cy;
+  const min = Math.min(distLeft, distRight, distTop, distBottom);
+
+  let nx = x, ny = y;
+  // Snap only if within ~80px of an edge
+  const SNAP_ZONE = 80;
+  if (min === distLeft && distLeft < SNAP_ZONE) nx = workArea.x + margin;
+  else if (min === distRight && distRight < SNAP_ZONE) nx = workArea.x + workArea.width - w - margin;
+  else if (min === distTop && distTop < SNAP_ZONE) ny = workArea.y + margin;
+  else if (min === distBottom && distBottom < SNAP_ZONE) ny = workArea.y + workArea.height - h - margin;
+
+  // Always clamp on-screen
+  nx = Math.max(workArea.x, Math.min(workArea.x + workArea.width - w, nx));
+  ny = Math.max(workArea.y, Math.min(workArea.y + workArea.height - h, ny));
+  mainWindow.setPosition(Math.round(nx), Math.round(ny));
+  widgetAnchor = { x: Math.round(nx), y: Math.round(ny) };
+  saveSettings({ widgetX: widgetAnchor.x, widgetY: widgetAnchor.y });
 });
 
 ipcMain.on('quit-app', () => {
@@ -148,14 +268,64 @@ ipcMain.handle('get-auto-launch', () => {
   return isAutoLaunchEnabled();
 });
 
+// ===== DAILY AUTO-BACKUP =====
+// The renderer sends its data; we write at most one backup per day,
+// keeping the last 7 in <userData>/backups.
+ipcMain.on('auto-backup', (event, jsonString) => {
+  try {
+    const dir = path.join(app.getPath('userData'), 'backups');
+    fs.mkdirSync(dir, { recursive: true });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const file = path.join(dir, `jot-autobackup-${today}.json`);
+
+    // Only write once per day
+    if (fs.existsSync(file)) return;
+    fs.writeFileSync(file, jsonString);
+
+    // Prune: keep the 7 most recent
+    const files = fs.readdirSync(dir)
+      .filter(f => f.startsWith('jot-autobackup-'))
+      .sort()
+      .reverse();
+    files.slice(7).forEach(f => {
+      try { fs.unlinkSync(path.join(dir, f)); } catch (e) {}
+    });
+  } catch (e) { /* non-fatal */ }
+});
+
+// Let the renderer open the backups folder from the UI
+ipcMain.on('open-backups-folder', () => {
+  const dir = path.join(app.getPath('userData'), 'backups');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  require('electron').shell.openPath(dir);
+});
+
 // ===== APP LIFECYCLE =====
 app.whenReady().then(() => {
   createWindow();
   createTray();
 
+  // Global hotkey to summon the widget from anywhere (even from tray)
+  try {
+    globalShortcut.register('CommandOrControl+Shift+Space', () => {
+      if (!mainWindow) { createWindow(); return; }
+      if (mainWindow.isVisible()) {
+        mainWindow.focus();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  } catch (e) { /* hotkey may be taken by another app; ignore */ }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 // Don't quit when window closes — stay in tray
