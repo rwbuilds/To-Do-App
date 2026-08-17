@@ -51,6 +51,11 @@
         }
         body.electron #app:hover { opacity: 1; }
         body.electron #taskbar-btn { display: none !important; }
+        /* When collapsed to the widget, hide everything except the widget itself */
+        body.widget-mode #app,
+        body.widget-mode #undoToast,
+        body.widget-mode #contextMenu,
+        body.widget-mode #taskbar-btn { display: none !important; }
         body.electron .content { max-height: none; flex: 1; min-height: 0; }
         /* Tab panels fill the window so content scrolls and the add bar stays pinned */
         body.electron #tab-todos,
@@ -811,9 +816,9 @@
             <button class="titlebar-btn" id="backupBtn" onclick="exportData()" title="Backup to file">💾</button>
             <button class="titlebar-btn" id="restoreBtn" onclick="document.getElementById('importFile').click()" title="Restore from file">📂</button>
             <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">🚀</button>
-            <button class="titlebar-btn" onclick="collapseToWidget()" title="Collapse to widget">⊟</button>
-            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize">—</button>
-            <button class="titlebar-btn close" onclick="collapseToWidget()" title="Close">✕</button>
+            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize to taskbar">—</button>
+            <button class="titlebar-btn" onclick="collapseToWidget()" title="Shrink to widget">🗗</button>
+            <button class="titlebar-btn close" onclick="closeApp()" title="Close Jot">✕</button>
         </div>
     </div>
     <input type="file" id="importFile" accept="application/json" style="display:none;" onchange="importData(event)">
@@ -1036,6 +1041,7 @@ function undoLastDelete() {
 
 // ===== APP STATE MANAGEMENT =====
 function expandApp() {
+    document.body.classList.remove('widget-mode');
     document.getElementById('widget').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('taskbar-btn').style.display = 'none';
@@ -1045,17 +1051,21 @@ function expandApp() {
 }
 
 function collapseToWidget() {
+    document.body.classList.add('widget-mode');
     document.getElementById('app').style.display = 'none';
     document.getElementById('widget').style.display = 'flex';
     document.getElementById('taskbar-btn').style.display = 'none';
+    // Hide any lingering toast
+    const toast = document.getElementById('undoToast');
+    if (toast) toast.classList.remove('show');
     appState = 'widget';
     if (window.widgetAPI) window.widgetAPI.resizeWindow('widget');
 }
 
 function minimizeToTaskbar() {
-    // In Electron: hide the window to the system tray
+    // In Electron: real OS minimize (stays in the taskbar)
     if (window.widgetAPI) {
-        window.widgetAPI.minimizeToTray();
+        window.widgetAPI.minimizeWindow();
         return;
     }
     // Browser fallback
@@ -1063,6 +1073,16 @@ function minimizeToTaskbar() {
     document.getElementById('widget').style.display = 'none';
     document.getElementById('taskbar-btn').style.display = 'flex';
     appState = 'minimized';
+}
+
+function closeApp() {
+    // Persist data before quitting (localStorage is synchronous, but be explicit)
+    saveData();
+    if (window.widgetAPI) {
+        window.widgetAPI.quitApp();
+    } else {
+        collapseToWidget();
+    }
 }
 
 function restoreApp() {
@@ -1841,9 +1861,6 @@ if (!window.widgetAPI) {
         if (dragging && !moved) {
             // It was a click, not a drag → open the app
             expandApp();
-        } else if (dragging && moved) {
-            // Snap the widget to the nearest screen edge
-            window.widgetAPI.snapWidget();
         }
         dragging = false;
     });
@@ -1921,9 +1938,15 @@ function renderAll() {
 refreshGroupSelectors();
 updateBadge();
 
+// Safety net: persist data if the window is ever closed/reloaded
+window.addEventListener('beforeunload', () => {
+    try { saveData(); } catch (e) {}
+});
+
 // Electron-specific setup
 if (window.widgetAPI) {
     document.body.classList.add('electron');
+    document.body.classList.add('widget-mode');
     // Start collapsed as a widget; the native window is already widget-sized
     window.widgetAPI.resizeWindow('widget');
 

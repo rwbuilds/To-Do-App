@@ -11,7 +11,11 @@ const px = Buffer.alloc(SIZE * SIZE * 4, 0);
 function setPx(x, y, r, g, b, a) {
   if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return;
   const i = (y * SIZE + x) * 4;
-  // simple alpha blend over existing
+  if (a >= 255) {
+    // opaque: write directly (avoids blend artifacts)
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
+    return;
+  }
   const ea = px[i + 3] / 255;
   const na = a / 255;
   const outA = na + ea * (1 - na);
@@ -20,6 +24,14 @@ function setPx(x, y, r, g, b, a) {
   px[i + 1] = Math.round((g * na + px[i + 1] * ea * (1 - na)) / outA);
   px[i + 2] = Math.round((b * na + px[i + 2] * ea * (1 - na)) / outA);
   px[i + 3] = Math.round(outA * 255);
+}
+
+// Write a solid 2x2 block to close gaps from rotated coordinate rounding
+function solidBlock(x, y, r, g, b) {
+  setPx(x, y, r, g, b, 255);
+  setPx(x + 1, y, r, g, b, 255);
+  setPx(x, y + 1, r, g, b, 255);
+  setPx(x + 1, y + 1, r, g, b, 255);
 }
 
 // Rounded-rect background (Peccy orange), with margin
@@ -51,26 +63,43 @@ for (let y = 0; y < SIZE; y++) {
   }
 }
 
-// Draw a bold "J" in dark ink using simple rectangles + curve
+// Draw a pencil (writing) glyph in dark ink — evokes the ✍️ emoji
 const ink = [26, 26, 26];
-function rect(x0, y0, w, h) {
-  for (let y = y0; y < y0 + h; y++)
-    for (let x = x0; x < x0 + w; x++)
-      setPx(x, y, ink[0], ink[1], ink[2], 255);
-}
-// J stem
-rect(150, 70, 30, 90);
-// J top bar
-rect(110, 70, 70, 30);
-// J hook (bottom curve) — approximate with a quarter circle
-const hcx = 110, hcy = 150, hr = 44, hthick = 30;
-for (let y = 0; y < SIZE; y++) {
-  for (let x = 0; x < SIZE; x++) {
-    const dx = x - hcx, dy = y - hcy;
-    const d = Math.sqrt(dx * dx + dy * dy);
-    if (d <= hr && d >= hr - hthick && dy >= 0) { // lower half
-      setPx(x, y, ink[0], ink[1], ink[2], 255);
+
+const angle = -0.75; // radians, diagonal
+const cxp = 128, cyp = 128;
+const halfLen = 66;
+const halfW = 16;
+const dirx = Math.cos(angle), diry = Math.sin(angle);
+const nx = -diry, ny = dirx; // normal
+// Body (sample at half-steps to avoid gaps, write solid blocks)
+for (let t = -halfLen; t <= halfLen; t += 0.5) {
+  for (let w = -halfW; w <= halfW; w += 0.5) {
+    const x = Math.round(cxp + dirx * t + nx * w);
+    const y = Math.round(cyp + diry * t + ny * w);
+    const tipStart = halfLen - 22;
+    if (t > tipStart) {
+      const taper = halfW * (halfLen - t) / 22;
+      if (Math.abs(w) > taper) continue;
     }
+    solidBlock(x, y, ink[0], ink[1], ink[2]);
+  }
+}
+// Pencil tip (orange graphite point)
+for (let t = halfLen - 22; t <= halfLen - 14; t += 0.5) {
+  for (let w = -halfW; w <= halfW; w += 0.5) {
+    const x = Math.round(cxp + dirx * t + nx * w);
+    const y = Math.round(cyp + diry * t + ny * w);
+    const taper = halfW * (halfLen - t) / 22;
+    if (Math.abs(w) <= taper) solidBlock(x, y, 0xff, 0xc9, 0x6b);
+  }
+}
+// Eraser band at the back (pink)
+for (let t = -halfLen; t <= -halfLen + 12; t += 0.5) {
+  for (let w = -halfW; w <= halfW; w += 0.5) {
+    const x = Math.round(cxp + dirx * t + nx * w);
+    const y = Math.round(cyp + diry * t + ny * w);
+    solidBlock(x, y, 0xff, 0x6b, 0x6b);
   }
 }
 

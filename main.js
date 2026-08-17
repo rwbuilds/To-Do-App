@@ -202,6 +202,11 @@ ipcMain.on('minimize-to-tray', () => {
   if (mainWindow) mainWindow.hide();
 });
 
+// Real OS minimize — keeps the app in the Windows taskbar
+ipcMain.on('minimize-window', () => {
+  if (mainWindow) mainWindow.minimize();
+});
+
 // Move the OS window to an absolute position (used for widget dragging)
 ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
   if (!mainWindow) return;
@@ -219,39 +224,6 @@ ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
 ipcMain.on('set-always-on-top', (event, value) => {
   alwaysOnTop = value;
   if (mainWindow) mainWindow.setAlwaysOnTop(value, 'screen-saver');
-});
-
-// Snap the widget to the nearest screen edge after dragging
-ipcMain.on('snap-widget', () => {
-  if (!mainWindow || mainWindow.isResizable()) return; // only in widget mode
-  const [x, y] = mainWindow.getPosition();
-  const [w, h] = mainWindow.getSize();
-  const { workArea } = screen.getDisplayNearestPoint({ x, y });
-  const margin = 12;
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-
-  // Distance to each edge
-  const distLeft = cx - workArea.x;
-  const distRight = (workArea.x + workArea.width) - cx;
-  const distTop = cy - workArea.y;
-  const distBottom = (workArea.y + workArea.height) - cy;
-  const min = Math.min(distLeft, distRight, distTop, distBottom);
-
-  let nx = x, ny = y;
-  // Snap only if within ~80px of an edge
-  const SNAP_ZONE = 80;
-  if (min === distLeft && distLeft < SNAP_ZONE) nx = workArea.x + margin;
-  else if (min === distRight && distRight < SNAP_ZONE) nx = workArea.x + workArea.width - w - margin;
-  else if (min === distTop && distTop < SNAP_ZONE) ny = workArea.y + margin;
-  else if (min === distBottom && distBottom < SNAP_ZONE) ny = workArea.y + workArea.height - h - margin;
-
-  // Always clamp on-screen
-  nx = Math.max(workArea.x, Math.min(workArea.x + workArea.width - w, nx));
-  ny = Math.max(workArea.y, Math.min(workArea.y + workArea.height - h, ny));
-  mainWindow.setPosition(Math.round(nx), Math.round(ny));
-  widgetAnchor = { x: Math.round(nx), y: Math.round(ny) };
-  saveSettings({ widgetX: widgetAnchor.x, widgetY: widgetAnchor.y });
 });
 
 ipcMain.on('quit-app', () => {
