@@ -110,6 +110,13 @@ function createWindow() {
     mainWindow.hide();
   }
 
+  // Clicking away (losing focus) collapses the expanded app back to the widget
+  mainWindow.on('blur', () => {
+    if (mainWindow && mainWindow.isResizable()) { // resizable == expanded mode
+      mainWindow.webContents.send('collapse-on-blur');
+    }
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 

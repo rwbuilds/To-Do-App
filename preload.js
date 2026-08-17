@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   autoBackup: (jsonString) => ipcRenderer.send('auto-backup', jsonString),
   openBackupsFolder: () => ipcRenderer.send('open-backups-folder'),
+  onCollapseOnBlur: (cb) => ipcRenderer.on('collapse-on-blur', cb),
 });

@@ -676,6 +676,33 @@
         .note-preview-pane a { color: var(--accent); }
         .note-preview-pane .md-check { margin-right: 6px; }
 
+        /* Formatting toolbar */
+        .format-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            padding: 6px 10px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .fmt-btn {
+            min-width: 26px;
+            height: 26px;
+            padding: 0 7px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .fmt-btn:hover { border-color: var(--accent); background: var(--surface-hover); }
+        .fmt-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+
         /* Group bar */
         .group-bar {
             padding: 6px 14px;
@@ -696,6 +723,53 @@
             outline: none;
             cursor: pointer;
         }
+
+        /* Group tabs */
+        .group-tabs {
+            flex: 1;
+            display: flex;
+            gap: 4px;
+            overflow-x: auto;
+            padding-bottom: 2px;
+            scrollbar-width: thin;
+        }
+        .group-tabs::-webkit-scrollbar { height: 4px; }
+        .group-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        .group-tab {
+            flex-shrink: 0;
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            color: var(--text-dim);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .group-tab:hover { color: var(--text); border-color: var(--accent); }
+        .group-tab.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+        .group-tab .gt-count {
+            font-size: 9px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 0 5px;
+        }
+        .group-tab.active .gt-count { background: rgba(255,255,255,0.25); }
+        .group-tab .gt-del {
+            font-size: 10px;
+            opacity: 0.5;
+            margin-left: 2px;
+        }
+        .group-tab .gt-del:hover { opacity: 1; }
 
         .multi-select-toggle.active {
             background: var(--accent);
@@ -814,7 +888,7 @@
         <h1>✍️ Jot</h1>
         <div class="titlebar-btns">
             <button class="titlebar-btn" id="backupBtn" onclick="exportData()" title="Backup to file">💾</button>
-            <button class="titlebar-btn" id="restoreBtn" onclick="document.getElementById('importFile').click()" title="Restore from file">📂</button>
+            <button class="titlebar-btn" id="restoreBtn" onclick="guardBlur(); document.getElementById('importFile').click()" title="Restore from file">📂</button>
             <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">🚀</button>
             <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize to taskbar">—</button>
             <button class="titlebar-btn" onclick="collapseToWidget()" title="Shrink to widget">🗗</button>
@@ -838,13 +912,12 @@
             <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
         </div>
 
-        <!-- Group selector + multi-select bar -->
+        <!-- Group tabs + multi-select -->
         <div class="group-bar">
-            <select class="group-select" id="groupFilter" onchange="renderTodos()">
-                <option value="all">All Groups</option>
-            </select>
+            <div class="group-tabs" id="groupTabs"></div>
             <button class="filter-btn multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()">☐ Select</button>
         </div>
+        <input type="hidden" id="groupFilter" value="all">
 
         <!-- Multi-select action row (only shown in select mode) -->
         <div class="group-bar" id="multiSelectBar" style="display:none;">
@@ -898,7 +971,19 @@
         
         <div class="note-editor" id="noteEditor">
             <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
-            <textarea class="note-editor-body" id="noteBody" placeholder="Start writing... (Markdown supported: # heading, **bold**, *italic*, - list, [ ] checkbox, `code`)" oninput="saveCurrentNote()"></textarea>
+            <div class="format-toolbar" id="formatToolbar">
+                <button class="fmt-btn" onclick="fmt('h1')" title="Heading 1"><b>H1</b></button>
+                <button class="fmt-btn" onclick="fmt('h2')" title="Heading 2"><b>H2</b></button>
+                <span class="fmt-sep"></span>
+                <button class="fmt-btn" onclick="fmt('bold')" title="Bold"><b>B</b></button>
+                <button class="fmt-btn" onclick="fmt('italic')" title="Italic"><i>I</i></button>
+                <button class="fmt-btn" onclick="fmt('code')" title="Code"><span style="font-family:monospace;">&lt;/&gt;</span></button>
+                <span class="fmt-sep"></span>
+                <button class="fmt-btn" onclick="fmt('bullet')" title="Bullet list">• List</button>
+                <button class="fmt-btn" onclick="fmt('check')" title="Checkbox">☑ Task</button>
+                <button class="fmt-btn" onclick="fmt('link')" title="Link">🔗</button>
+            </div>
+            <textarea class="note-editor-body" id="noteBody" placeholder="Start writing... (formatting buttons above, or type Markdown)" oninput="saveCurrentNote()"></textarea>
             <div class="note-preview-pane" id="notePreview" style="display:none;"></div>
             <div class="add-bar">
                 <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
@@ -961,6 +1046,7 @@ function saveData() {
 
 // ===== BACKUP / RESTORE =====
 function exportData() {
+    if (typeof guardBlur === 'function') guardBlur();
     const payload = JSON.stringify({ ...data, _exportedAt: new Date().toISOString(), _app: 'Jot', _v: 1 }, null, 2);
     const blob = new Blob([payload], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1199,13 +1285,46 @@ function refreshGroupSelectors() {
         data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
     addSel.value = curAdd;
 
-    // Filter dropdown
-    const filterSel = document.getElementById('groupFilter');
-    const curFilter = filterSel.value;
-    filterSel.innerHTML = '<option value="all">All Groups</option>' +
-        '<option value="__none__">Ungrouped</option>' +
-        data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
-    filterSel.value = curFilter || 'all';
+    // Reset hidden filter if the active group no longer exists
+    const filterEl = document.getElementById('groupFilter');
+    if (filterEl.value !== 'all' && filterEl.value !== '__none__' && !data.groups.includes(filterEl.value)) {
+        filterEl.value = 'all';
+    }
+
+    renderGroupTabs();
+}
+
+function renderGroupTabs() {
+    const el = document.getElementById('groupTabs');
+    if (!el) return;
+    const active = document.getElementById('groupFilter').value;
+
+    const countFor = (pred) => data.todos.filter(pred).length;
+    const tabs = [];
+
+    tabs.push({ key: 'all', label: 'All', count: data.todos.length });
+    // Only show Ungrouped if there are ungrouped tasks
+    const ungroupedCount = countFor(t => !t.group);
+    if (ungroupedCount > 0 && data.groups.length > 0) {
+        tabs.push({ key: '__none__', label: 'Ungrouped', count: ungroupedCount });
+    }
+    data.groups.forEach(g => {
+        tabs.push({ key: g, label: g, count: countFor(t => t.group === g), deletable: true });
+    });
+
+    el.innerHTML = tabs.map(t => `
+        <div class="group-tab ${active === t.key ? 'active' : ''}" onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')">
+            <span>${escapeHtml(t.label)}</span>
+            <span class="gt-count">${t.count}</span>
+            ${t.deletable ? `<span class="gt-del" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">✕</span>` : ''}
+        </div>
+    `).join('');
+}
+
+function selectGroupTab(key) {
+    document.getElementById('groupFilter').value = key;
+    renderGroupTabs();
+    renderTodos();
 }
 
 // ===== WIP =====
@@ -1600,6 +1719,8 @@ function openNoteEditor(id) {
     document.getElementById('noteBody').style.display = '';
     document.getElementById('notePreview').style.display = 'none';
     document.getElementById('mdToggleBtn').textContent = '👁 Preview';
+    const _tb = document.getElementById('formatToolbar');
+    if (_tb) _tb.style.display = '';
     updateCharCount();
 }
 
@@ -1650,6 +1771,69 @@ function updateCharCount() {
 // ===== MARKDOWN =====
 let markdownPreviewOn = false;
 
+// Insert / wrap markdown formatting at the cursor in the note body
+function fmt(kind) {
+    const ta = document.getElementById('noteBody');
+    if (!ta) return;
+    // If in preview mode, switch back to edit first
+    if (markdownPreviewOn) toggleMarkdownPreview();
+
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const value = ta.value;
+    const sel = value.slice(start, end);
+
+    let before = value.slice(0, start);
+    let after = value.slice(end);
+    let insert = '';
+    let cursorOffset = 0;
+
+    const atLineStart = () => (start === 0 || value[start - 1] === '\n');
+    const ensureNL = (s) => (s.length && !s.endsWith('\n') ? '\n' : '');
+
+    switch (kind) {
+        case 'bold':
+            insert = `**${sel || 'bold text'}**`;
+            cursorOffset = sel ? insert.length : 2 + 9;
+            break;
+        case 'italic':
+            insert = `*${sel || 'italic text'}*`;
+            cursorOffset = sel ? insert.length : 1 + 11;
+            break;
+        case 'code':
+            insert = `\`${sel || 'code'}\``;
+            cursorOffset = sel ? insert.length : 1 + 4;
+            break;
+        case 'h1':
+            before += ensureNL(before);
+            insert = `# ${sel || 'Heading'}`;
+            break;
+        case 'h2':
+            before += ensureNL(before);
+            insert = `## ${sel || 'Heading'}`;
+            break;
+        case 'bullet':
+            before += ensureNL(before);
+            if (sel) insert = sel.split('\n').map(l => '- ' + l).join('\n');
+            else insert = '- ';
+            break;
+        case 'check':
+            before += ensureNL(before);
+            if (sel) insert = sel.split('\n').map(l => '- [ ] ' + l).join('\n');
+            else insert = '- [ ] ';
+            break;
+        case 'link':
+            insert = `[${sel || 'text'}](https://)`;
+            break;
+    }
+
+    ta.value = before + insert + after;
+    const newPos = (before + insert).length;
+    ta.focus();
+    ta.setSelectionRange(newPos, newPos);
+    saveCurrentNote();
+}
+
 function renderMarkdown(src) {
     // Escape HTML first
     let html = src
@@ -1696,14 +1880,17 @@ function toggleMarkdownPreview() {
     const ta = document.getElementById('noteBody');
     const pv = document.getElementById('notePreview');
     const btn = document.getElementById('mdToggleBtn');
+    const toolbar = document.getElementById('formatToolbar');
     if (markdownPreviewOn) {
         renderMarkdownPreview();
         ta.style.display = 'none';
         pv.style.display = '';
+        if (toolbar) toolbar.style.display = 'none';
         btn.textContent = '✏️ Edit';
     } else {
         ta.style.display = '';
         pv.style.display = 'none';
+        if (toolbar) toolbar.style.display = '';
         btn.textContent = '👁 Preview';
     }
 }
@@ -1720,7 +1907,13 @@ function renderNotes() {
         container.innerHTML = `<div class="empty-state"><div class="icon">📒</div><p>No notes yet — click + New to start</p></div>`;
     } else {
         container.innerHTML = notes.map(n => `
-            <div class="note-item" onclick="openNoteEditor('${n.id}')">
+            <div class="note-item" onclick="openNoteEditor('${n.id}')"
+                 draggable="true"
+                 ondragstart="onNoteDragStart(event, '${n.id}')"
+                 ondragover="onNoteDragOver(event, '${n.id}')"
+                 ondragleave="onNoteDragLeave(event)"
+                 ondrop="onNoteDrop(event, '${n.id}')"
+                 ondragend="onNoteDragEnd(event)">
                 <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note">🗑</button>
                 <div class="note-title">${escapeHtml(n.title) || 'Untitled'}</div>
                 <div class="note-preview">${escapeHtml(n.body.substring(0, 80)) || 'Empty note...'}</div>
@@ -1731,6 +1924,41 @@ function renderNotes() {
             </div>
         `).join('');
     }
+}
+
+// ===== NOTE DRAG TO REORDER =====
+let noteDragSrcId = null;
+
+function onNoteDragStart(e, id) {
+    noteDragSrcId = id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.4';
+}
+function onNoteDragOver(e, id) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.style.borderTop = '2px solid var(--accent)';
+}
+function onNoteDragLeave(e) {
+    e.currentTarget.style.borderTop = '';
+}
+function onNoteDrop(e, targetId) {
+    e.preventDefault();
+    e.currentTarget.style.borderTop = '';
+    if (!noteDragSrcId || noteDragSrcId === targetId) return;
+    const srcIdx = data.notes.findIndex(n => n.id === noteDragSrcId);
+    const tgtIdx = data.notes.findIndex(n => n.id === targetId);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+    const [moved] = data.notes.splice(srcIdx, 1);
+    const newTgtIdx = data.notes.findIndex(n => n.id === targetId);
+    data.notes.splice(newTgtIdx, 0, moved);
+    saveData();
+    renderNotes();
+}
+function onNoteDragEnd(e) {
+    e.currentTarget.style.opacity = '';
+    document.querySelectorAll('.note-item').forEach(el => el.style.borderTop = '');
+    noteDragSrcId = null;
 }
 
 // ===== CONTEXT MENU =====
@@ -1963,6 +2191,22 @@ if (window.widgetAPI) {
         const payload = JSON.stringify({ ...data, _app: 'Jot', _v: 1, _auto: true });
         window.widgetAPI.autoBackup(payload);
     } catch (e) {}
+
+    // Click-away → collapse to widget (unless a dialog is open)
+    if (window.widgetAPI.onCollapseOnBlur) {
+        window.widgetAPI.onCollapseOnBlur(() => {
+            if (suppressBlurCollapse) return;
+            if (appState === 'expanded') collapseToWidget();
+        });
+    }
+}
+
+// Set true briefly while a native dialog (file picker) is open so the
+// resulting focus loss doesn't collapse the app.
+let suppressBlurCollapse = false;
+function guardBlur() {
+    suppressBlurCollapse = true;
+    setTimeout(() => { suppressBlurCollapse = false; }, 1500);
 }
 
 function toggleAutoLaunch() {
