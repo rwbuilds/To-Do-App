@@ -223,15 +223,17 @@
 
         /* Search/Filter bar */
         .toolbar {
-            padding: 10px 14px;
+            padding: 10px 12px;
             display: flex;
             gap: 8px;
             align-items: center;
             border-bottom: 1px solid var(--border);
+            flex-wrap: nowrap;
         }
 
         .search-input {
             flex: 1;
+            min-width: 60px;
             padding: 7px 10px;
             font-size: 12px;
             background: var(--surface);
@@ -258,6 +260,40 @@
 
         .filter-btn:hover { border-color: var(--accent); color: var(--text); }
         .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* Filter pills group — never wraps, scrolls if needed */
+        .filter-pills {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        /* Square icon-only pills (add group, select, options) */
+        .icon-pill {
+            width: 28px;
+            height: 28px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .icon-pill:hover { border-color: var(--accent); color: var(--text); }
+        .icon-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* Collapsible add options row */
+        .add-options {
+            display: flex;
+            gap: 6px;
+            padding: 8px 12px 0;
+            flex-wrap: wrap;
+        }
 
         /* Content area */
         .content {
@@ -464,12 +500,23 @@
             background: none;
             border: none;
             color: var(--text);
-            resize: none;
             outline: none;
             min-height: 250px;
+            overflow-y: auto;
         }
 
-        .note-editor-body::placeholder { color: var(--text-dim); }
+        /* Placeholder for the contenteditable body */
+        .note-editor-body:empty:before {
+            content: attr(data-placeholder);
+            color: var(--text-dim);
+            pointer-events: none;
+        }
+        .note-editor-body h1 { font-size: 20px; margin: 8px 0 6px; font-weight: 700; }
+        .note-editor-body h2 { font-size: 17px; margin: 8px 0 6px; font-weight: 700; }
+        .note-editor-body ul, .note-editor-body ol { margin: 6px 0 6px 22px; }
+        .note-editor-body li { margin: 3px 0; }
+        .note-editor-body a { color: var(--accent); text-decoration: underline; cursor: pointer; }
+        .note-editor-body:focus { outline: none; }
 
         /* Add input */
         .add-bar {
@@ -701,6 +748,11 @@
             justify-content: center;
         }
         .fmt-btn:hover { border-color: var(--accent); background: var(--surface-hover); }
+        .fmt-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
         .fmt-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
 
         /* Group bar */
@@ -724,32 +776,30 @@
             cursor: pointer;
         }
 
-        /* Group tabs */
+        /* Group tabs — match the filter pills, single line with overflow "More" */
         .group-tabs {
             flex: 1;
             display: flex;
-            gap: 4px;
-            overflow-x: auto;
-            padding-bottom: 2px;
-            scrollbar-width: thin;
+            gap: 6px;
+            align-items: center;
+            min-width: 0;
+            overflow: hidden;
         }
-        .group-tabs::-webkit-scrollbar { height: 4px; }
-        .group-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
         .group-tab {
             flex-shrink: 0;
-            padding: 4px 12px;
+            padding: 6px 12px;
             font-size: 11px;
             font-weight: 500;
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 14px;
+            border-radius: 6px;
             color: var(--text-dim);
             cursor: pointer;
             white-space: nowrap;
             transition: all 0.15s;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 5px;
+            gap: 6px;
         }
         .group-tab:hover { color: var(--text); border-color: var(--accent); }
         .group-tab.active {
@@ -757,19 +807,48 @@
             border-color: var(--accent);
             color: #fff;
         }
-        .group-tab .gt-count {
-            font-size: 9px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            padding: 0 5px;
-        }
-        .group-tab.active .gt-count { background: rgba(255,255,255,0.25); }
         .group-tab .gt-del {
             font-size: 10px;
             opacity: 0.5;
-            margin-left: 2px;
+            cursor: pointer;
         }
-        .group-tab .gt-del:hover { opacity: 1; }
+        .group-tab .gt-del:hover { opacity: 1; color: var(--danger); }
+        .group-tab.active .gt-del:hover { color: #fff; }
+
+        /* "More" overflow dropdown */
+        .group-more-wrap { position: relative; flex-shrink: 0; }
+        .group-more-menu {
+            position: absolute;
+            top: 110%;
+            right: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 5px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 130px;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+        .group-more-menu.open { display: flex; }
+        .group-more-item {
+            padding: 6px 10px;
+            font-size: 11px;
+            border-radius: 6px;
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        .group-more-item:hover { background: var(--surface-hover); }
+        .group-more-item.active { color: var(--accent); font-weight: 600; }
 
         .multi-select-toggle.active {
             background: var(--accent);
@@ -844,9 +923,9 @@
         .group-header:first-child { margin-top: 0; }
 
         .group-header .group-name {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--accent);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-dim);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -887,11 +966,11 @@
     <div class="titlebar" id="titlebar">
         <h1>✍️ Jot</h1>
         <div class="titlebar-btns">
-            <button class="titlebar-btn" id="backupBtn" onclick="exportData()" title="Backup to file">💾</button>
-            <button class="titlebar-btn" id="restoreBtn" onclick="guardBlur(); document.getElementById('importFile').click()" title="Restore from file">📂</button>
-            <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">🚀</button>
-            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize to taskbar">—</button>
-            <button class="titlebar-btn" onclick="collapseToWidget()" title="Shrink to widget">🗗</button>
+            <button class="titlebar-btn" id="backupBtn" onclick="exportData()" title="Backup to file">⤓</button>
+            <button class="titlebar-btn" id="restoreBtn" onclick="guardBlur(); document.getElementById('importFile').click()" title="Restore from file">⤒</button>
+            <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">⏻</button>
+            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize to taskbar">﹣</button>
+            <button class="titlebar-btn" onclick="collapseToWidget()" title="Shrink to widget">❐</button>
             <button class="titlebar-btn close" onclick="closeApp()" title="Close Jot">✕</button>
         </div>
     </div>
@@ -906,55 +985,57 @@
     <div id="tab-todos">
         <div class="toolbar">
             <input type="text" class="search-input" id="searchTodos" placeholder="Search tasks..." oninput="renderTodos()">
-            <button class="filter-btn" id="filterAll" onclick="setFilter('all')">All</button>
-            <button class="filter-btn" id="filterActive" onclick="setFilter('active')">Active</button>
-            <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
-            <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
+            <div class="filter-pills">
+                <button class="filter-btn" id="filterAll" onclick="setFilter('all')">All</button>
+                <button class="filter-btn" id="filterActive" onclick="setFilter('active')">Active</button>
+                <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
+                <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
+            </div>
         </div>
 
-        <!-- Group tabs + multi-select -->
+        <!-- Group tabs + add-group + multi-select -->
         <div class="group-bar">
             <div class="group-tabs" id="groupTabs"></div>
-            <button class="filter-btn multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()">☐ Select</button>
+            <button class="icon-pill" id="addGroupBtn" onclick="promptAddGroup()" title="Add group">+</button>
+            <button class="icon-pill multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()" title="Select multiple">☑</button>
         </div>
         <input type="hidden" id="groupFilter" value="all">
 
         <!-- Multi-select action row (only shown in select mode) -->
         <div class="group-bar" id="multiSelectBar" style="display:none;">
-            <button class="filter-btn" id="selectAllBtn" onclick="toggleSelectAll()">☑ Select All</button>
+            <button class="filter-btn" id="selectAllBtn" onclick="toggleSelectAll()">Select All</button>
             <span class="selected-count" id="selectedCount">0 selected</span>
             <div style="flex:1;"></div>
-            <button class="filter-btn copy-btn" id="copyBtn" onclick="copySelected()">📋 Copy</button>
-            <button class="filter-btn delete-selected-btn" id="deleteSelectedBtn" onclick="deleteSelected()">🗑 Delete</button>
+            <button class="filter-btn copy-btn" id="copyBtn" onclick="copySelected()">Copy</button>
+            <button class="filter-btn delete-selected-btn" id="deleteSelectedBtn" onclick="deleteSelected()">Delete</button>
         </div>
 
         <div class="content" id="todoList"></div>
 
-        <div class="add-bar" style="flex-wrap:wrap;">
-            <input type="text" class="add-input" id="todoInput" placeholder="Add a task... (use #tag for tags)" onkeydown="if(event.key==='Enter')addTodo()" style="min-width:120px;">
-            <select class="priority-select" id="prioritySelect">
-                <option value="none">—</option>
+        <!-- Collapsible add options -->
+        <div class="add-options" id="addOptions" style="display:none;">
+            <select class="priority-select" id="prioritySelect" title="Priority">
+                <option value="none">Priority</option>
                 <option value="low">Low</option>
-                <option value="medium">Med</option>
+                <option value="medium">Medium</option>
                 <option value="high">High</option>
             </select>
-            <select class="priority-select" id="groupSelect">
+            <select class="priority-select" id="groupSelect" title="Group">
                 <option value="">No Group</option>
             </select>
             <select class="priority-select" id="repeatSelect" title="Repeat">
-                <option value="none">↻ Once</option>
+                <option value="none">Repeat: Off</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
             </select>
-            <input type="date" class="due-input" id="dueInput">
-            <button class="add-btn" onclick="addTodo()">Add</button>
+            <input type="date" class="due-input" id="dueInput" title="Due date">
         </div>
 
-        <!-- Add Group -->
-        <div class="add-bar" style="border-top:none; padding-top:0;">
-            <input type="text" class="add-input" id="newGroupInput" placeholder="New group name..." onkeydown="if(event.key==='Enter')addGroup()" style="font-size:11px;">
-            <button class="filter-btn" onclick="addGroup()">+ Group</button>
+        <div class="add-bar">
+            <button class="icon-pill" id="optionsToggle" onclick="toggleAddOptions()" title="More options">⚙</button>
+            <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (#tag)" onkeydown="if(event.key==='Enter')addTodo()">
+            <button class="add-btn" onclick="addTodo()">Add</button>
         </div>
 
         <div class="stats-bar" id="todoStats"></div>
@@ -972,23 +1053,28 @@
         <div class="note-editor" id="noteEditor">
             <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
             <div class="format-toolbar" id="formatToolbar">
-                <button class="fmt-btn" onclick="fmt('h1')" title="Heading 1"><b>H1</b></button>
-                <button class="fmt-btn" onclick="fmt('h2')" title="Heading 2"><b>H2</b></button>
+                <button class="fmt-btn" data-cmd="formatBlock:H1" onclick="fmtBlock('H1')" title="Heading 1"><b>H1</b></button>
+                <button class="fmt-btn" data-cmd="formatBlock:H2" onclick="fmtBlock('H2')" title="Heading 2"><b>H2</b></button>
                 <span class="fmt-sep"></span>
-                <button class="fmt-btn" onclick="fmt('bold')" title="Bold"><b>B</b></button>
-                <button class="fmt-btn" onclick="fmt('italic')" title="Italic"><i>I</i></button>
-                <button class="fmt-btn" onclick="fmt('code')" title="Code"><span style="font-family:monospace;">&lt;/&gt;</span></button>
+                <button class="fmt-btn" data-cmd="bold" onclick="fmtCmd('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
+                <button class="fmt-btn" data-cmd="italic" onclick="fmtCmd('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
+                <button class="fmt-btn" data-cmd="underline" onclick="fmtCmd('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
+                <button class="fmt-btn" data-cmd="strikeThrough" onclick="fmtCmd('strikeThrough')" title="Strikethrough"><s>S</s></button>
                 <span class="fmt-sep"></span>
-                <button class="fmt-btn" onclick="fmt('bullet')" title="Bullet list">• List</button>
-                <button class="fmt-btn" onclick="fmt('check')" title="Checkbox">☑ Task</button>
-                <button class="fmt-btn" onclick="fmt('link')" title="Link">🔗</button>
+                <button class="fmt-btn" data-cmd="insertUnorderedList" onclick="fmtCmd('insertUnorderedList')" title="Bullet list">• List</button>
+                <button class="fmt-btn" data-cmd="insertOrderedList" onclick="fmtCmd('insertOrderedList')" title="Numbered list">1. List</button>
+                <span class="fmt-sep"></span>
+                <button class="fmt-btn" onclick="fmtLink()" title="Insert link">🔗</button>
+                <button class="fmt-btn" onclick="fmtCmd('removeFormat')" title="Clear formatting">⌫</button>
             </div>
-            <textarea class="note-editor-body" id="noteBody" placeholder="Start writing... (formatting buttons above, or type Markdown)" oninput="saveCurrentNote()"></textarea>
-            <div class="note-preview-pane" id="notePreview" style="display:none;"></div>
+            <div class="note-editor-body" id="noteBody" contenteditable="true"
+                 data-placeholder="Start writing..."
+                 oninput="onNoteInput()"
+                 onkeyup="updateToolbarState()"
+                 onmouseup="updateToolbarState()"></div>
             <div class="add-bar">
                 <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
-                <button class="filter-btn" id="mdToggleBtn" onclick="toggleMarkdownPreview()" title="Toggle Markdown preview">👁 Preview</button>
-                <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 chars</span>
+                <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 words</span>
                 <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
             </div>
         </div>
@@ -1257,6 +1343,7 @@ function addTodo() {
 // ===== GROUPS =====
 function addGroup() {
     const input = document.getElementById('newGroupInput');
+    if (!input) return;  // legacy path removed; use promptAddGroup()
     const name = input.value.trim();
     if (!name) return;
     if (!data.groups.includes(name)) {
@@ -1299,26 +1386,86 @@ function renderGroupTabs() {
     if (!el) return;
     const active = document.getElementById('groupFilter').value;
 
-    const countFor = (pred) => data.todos.filter(pred).length;
-    const tabs = [];
-
-    tabs.push({ key: 'all', label: 'All', count: data.todos.length });
-    // Only show Ungrouped if there are ungrouped tasks
-    const ungroupedCount = countFor(t => !t.group);
+    // Build the full list of tabs
+    const tabs = [{ key: 'all', label: 'All' }];
+    const ungroupedCount = data.todos.filter(t => !t.group).length;
     if (ungroupedCount > 0 && data.groups.length > 0) {
-        tabs.push({ key: '__none__', label: 'Ungrouped', count: ungroupedCount });
+        tabs.push({ key: '__none__', label: 'Ungrouped' });
     }
-    data.groups.forEach(g => {
-        tabs.push({ key: g, label: g, count: countFor(t => t.group === g), deletable: true });
-    });
+    data.groups.forEach(g => tabs.push({ key: g, label: g, deletable: true }));
 
-    el.innerHTML = tabs.map(t => `
+    // Store the full tab set for the observer to re-fit against
+    el._tabsData = { tabs, active };
+
+    // Set up a ResizeObserver once — reliably re-fits on any width change
+    if (!el._resizeObserver && typeof ResizeObserver !== 'undefined') {
+        el._resizeObserver = new ResizeObserver(() => {
+            if (el._tabsData) fitGroupTabs(el._tabsData.tabs, el._tabsData.active);
+        });
+        el._resizeObserver.observe(el);
+    }
+
+    // fitGroupTabs renders the full set, measures, and collapses overflow
+    fitGroupTabs(tabs, active);
+}
+
+function fitGroupTabs(tabs, active) {
+    const el = document.getElementById('groupTabs');
+    if (!el) return;
+    if (el._fitting) return;        // guard against ResizeObserver re-entrancy
+    el._fitting = true;
+
+    const tabHtml = (t) => `
         <div class="group-tab ${active === t.key ? 'active' : ''}" onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')">
             <span>${escapeHtml(t.label)}</span>
-            <span class="gt-count">${t.count}</span>
             ${t.deletable ? `<span class="gt-del" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">✕</span>` : ''}
-        </div>
-    `).join('');
+        </div>`;
+
+    // Always start from the FULL set so growing the window restores tabs
+    el.innerHTML = tabs.map(tabHtml).join('');
+
+    const available = el.clientWidth;
+    if (available <= 0) { el._fitting = false; return; }
+
+    const pills = Array.from(el.children).filter(c => c.classList.contains('group-tab'));
+    const widths = pills.map(p => p.offsetWidth + 6); // + gap
+
+    const MORE_W = 64;
+    let used = 0;
+    let visibleCount = tabs.length;
+    for (let i = 0; i < tabs.length; i++) {
+        used += widths[i] || 0;
+        if (used > available - (i < tabs.length - 1 ? MORE_W : 0)) {
+            visibleCount = i;
+            break;
+        }
+    }
+
+    if (visibleCount >= tabs.length) { el._fitting = false; return; } // all fit
+
+    const visible = tabs.slice(0, Math.max(1, visibleCount));
+    const overflow = tabs.slice(Math.max(1, visibleCount));
+    const overflowActive = overflow.some(t => t.key === active);
+
+    const moreHtml = `
+        <div class="group-more-wrap">
+            <div class="group-tab ${overflowActive ? 'active' : ''}" onclick="event.stopPropagation(); toggleGroupMore()">More ▾</div>
+            <div class="group-more-menu" id="groupMoreMenu">
+                ${overflow.map(t => `
+                    <div class="group-more-item ${active === t.key ? 'active' : ''}" onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')">
+                        <span>${escapeHtml(t.label)}</span>
+                        ${t.deletable ? `<span class="gt-del" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete">✕</span>` : ''}
+                    </div>`).join('')}
+            </div>
+        </div>`;
+
+    el.innerHTML = visible.map(tabHtml).join('') + moreHtml;
+    el._fitting = false;
+}
+
+function toggleGroupMore() {
+    const m = document.getElementById('groupMoreMenu');
+    if (m) m.classList.toggle('open');
 }
 
 function selectGroupTab(key) {
@@ -1402,6 +1549,9 @@ function startEditTodo(id, textEl) {
     input.type = 'text';
     input.value = todo.text;
     input.className = 'todo-edit-input';
+    // Prevent the parent task from being dragged while editing
+    const parentItem = textEl.closest('.todo-item');
+    if (parentItem) parentItem.setAttribute('draggable', 'false');
     textEl.replaceWith(input);
     input.focus();
     input.select();
@@ -1431,7 +1581,7 @@ function renderTodos() {
         if (currentFilter === 'done' && !t.completed) return false;
         if (groupFilter === '__none__' && t.group) return false;
         if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
-        if (search && !t.text.toLowerCase().includes(search) && !t.tags.some(tag => tag.includes(search))) return false;
+        if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
         return true;
     });
 
@@ -1498,7 +1648,7 @@ function renderTodoItem(t) {
     const isSelected = selectedIds.has(t.id);
     return `
         <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass}"
-             draggable="true"
+             draggable="${multiSelectMode ? 'false' : 'true'}"
              data-id="${t.id}"
              oncontextmenu="showContextMenu(event, '${t.id}')"
              ondragstart="onTodoDragStart(event, '${t.id}')"
@@ -1513,7 +1663,7 @@ function renderTodoItem(t) {
                 <div class="todo-meta">
                     ${t.wip ? '<span class="wip-badge">WIP</span>' : ''}
                     ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:rgba(124,92,252,0.2);color:var(--accent);">↻ ${t.repeat}</span>` : ''}
-                    ${t.tags.map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
+                    ${(t.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
                     ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}</span>` : ''}
                 </div>
             </div>
@@ -1578,9 +1728,29 @@ function toggleMultiSelect() {
     multiSelectMode = !multiSelectMode;
     if (!multiSelectMode) selectedIds.clear();
     document.getElementById('multiSelectBtn').classList.toggle('active', multiSelectMode);
-    document.getElementById('multiSelectBtn').textContent = multiSelectMode ? '☑ Selecting' : '☐ Select';
     document.getElementById('multiSelectBar').style.display = multiSelectMode ? '' : 'none';
     renderTodos();
+}
+
+// Add a group via a simple prompt (replaces the always-visible input row)
+function promptAddGroup() {
+    const name = (prompt('New group name:') || '').trim();
+    if (!name) return;
+    if (!data.groups.includes(name)) {
+        data.groups.push(name);
+        saveData();
+        refreshGroupSelectors();
+        renderTodos();
+    }
+}
+
+// Toggle the collapsible add-options row
+function toggleAddOptions() {
+    const opts = document.getElementById('addOptions');
+    const btn = document.getElementById('optionsToggle');
+    const show = opts.style.display === 'none';
+    opts.style.display = show ? 'flex' : 'none';
+    btn.classList.toggle('active', show);
 }
 
 function toggleSelectAll() {
@@ -1593,7 +1763,7 @@ function toggleSelectAll() {
         if (currentFilter === 'done' && !t.completed) return false;
         if (groupFilter === '__none__' && t.group) return false;
         if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
-        if (search && !t.text.toLowerCase().includes(search) && !t.tags.some(tag => tag.includes(search))) return false;
+        if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
         return true;
     });
 
@@ -1646,7 +1816,7 @@ function updateSelectedCount() {
             if (currentFilter === 'done' && !t.completed) return false;
             if (groupFilter === '__none__' && t.group) return false;
             if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
-            if (search && !t.text.toLowerCase().includes(search) && !t.tags.some(tag => tag.includes(search))) return false;
+            if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
             return true;
         });
         const allSelected = visible.length > 0 && visible.every(t => selectedIds.has(t.id));
@@ -1664,7 +1834,7 @@ function copySelected() {
     const lines = selected.map((t, i) => {
         let line = `${i + 1}. ${t.text}`;
         if (t.wip) line += ' (WIP)';
-        if (t.tags.length) line += ' ' + t.tags.map(tag => '#' + tag).join(' ');
+        if (t.tags && t.tags.length) line += ' ' + t.tags.map(tag => '#' + tag).join(' ');
         if (t.dueDate) line += ` (due ${formatDate(t.dueDate)})`;
         return line;
     });
@@ -1713,24 +1883,25 @@ function openNoteEditor(id) {
     const editor = document.getElementById('noteEditor');
     editor.classList.add('active');
     document.getElementById('noteTitle').value = note.title;
-    document.getElementById('noteBody').value = note.body;
-    // Always open in edit mode
-    markdownPreviewOn = false;
-    document.getElementById('noteBody').style.display = '';
-    document.getElementById('notePreview').style.display = 'none';
-    document.getElementById('mdToggleBtn').textContent = '👁 Preview';
-    const _tb = document.getElementById('formatToolbar');
-    if (_tb) _tb.style.display = '';
+    // Load HTML body into the contenteditable div. Migrate old plain-text notes.
+    const bodyEl = document.getElementById('noteBody');
+    bodyEl.innerHTML = note.bodyHtml != null ? note.bodyHtml : escapeHtml(note.body || '').replace(/\n/g, '<br>');
+    linkifyEditor();
     updateCharCount();
+    updateToolbarState();
 }
 
 function closeNoteEditor() {
     editingNoteId = null;
-    markdownPreviewOn = false;
     document.getElementById('noteEditor').classList.remove('active');
     document.getElementById('noteList').style.display = '';
     document.querySelector('#tab-notes .toolbar').style.display = '';
     renderNotes();
+}
+
+function onNoteInput() {
+    saveCurrentNote();
+    updateToolbarState();
 }
 
 function saveCurrentNote() {
@@ -1738,7 +1909,9 @@ function saveCurrentNote() {
     const note = data.notes.find(n => n.id === editingNoteId);
     if (!note) return;
     note.title = document.getElementById('noteTitle').value;
-    note.body = document.getElementById('noteBody').value;
+    const bodyEl = document.getElementById('noteBody');
+    note.bodyHtml = bodyEl.innerHTML;
+    note.body = bodyEl.innerText;  // plain text for search/preview
     note.updatedAt = new Date().toISOString();
     saveData();
     updateCharCount();
@@ -1746,8 +1919,13 @@ function saveCurrentNote() {
 
 function deleteCurrentNote() {
     if (!editingNoteId) return;
-    data.notes = data.notes.filter(n => n.id !== editingNoteId);
-    saveData();
+    const index = data.notes.findIndex(n => n.id === editingNoteId);
+    if (index !== -1) {
+        const item = data.notes[index];
+        data.notes.splice(index, 1);
+        saveData();
+        showToast('Note deleted', { type: 'notes', items: [{ item, index }] });
+    }
     closeNoteEditor();
 }
 
@@ -1762,143 +1940,118 @@ function deleteNote(id) {
 }
 
 function updateCharCount() {
-    const body = document.getElementById('noteBody').value;
-    document.getElementById('noteCharCount').textContent = `${body.length} chars · ${body.split(/\s+/).filter(w=>w).length} words`;
-    // Keep preview in sync if it's open
-    if (markdownPreviewOn) renderMarkdownPreview();
+    const el = document.getElementById('noteBody');
+    const text = el ? el.innerText : '';
+    const words = text.split(/\s+/).filter(w => w).length;
+    document.getElementById('noteCharCount').textContent = `${words} words`;
 }
 
-// ===== MARKDOWN =====
-let markdownPreviewOn = false;
+// ===== WYSIWYG RICH TEXT EDITOR =====
+function focusBody() {
+    const el = document.getElementById('noteBody');
+    el.focus();
+}
 
-// Insert / wrap markdown formatting at the cursor in the note body
-function fmt(kind) {
-    const ta = document.getElementById('noteBody');
-    if (!ta) return;
-    // If in preview mode, switch back to edit first
-    if (markdownPreviewOn) toggleMarkdownPreview();
+// Toggle-style inline command (bold, italic, underline, lists, etc.)
+function fmtCmd(cmd) {
+    focusBody();
+    document.execCommand(cmd, false, null);
+    saveCurrentNote();
+    updateToolbarState();
+}
 
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const value = ta.value;
-    const sel = value.slice(start, end);
-
-    let before = value.slice(0, start);
-    let after = value.slice(end);
-    let insert = '';
-    let cursorOffset = 0;
-
-    const atLineStart = () => (start === 0 || value[start - 1] === '\n');
-    const ensureNL = (s) => (s.length && !s.endsWith('\n') ? '\n' : '');
-
-    switch (kind) {
-        case 'bold':
-            insert = `**${sel || 'bold text'}**`;
-            cursorOffset = sel ? insert.length : 2 + 9;
-            break;
-        case 'italic':
-            insert = `*${sel || 'italic text'}*`;
-            cursorOffset = sel ? insert.length : 1 + 11;
-            break;
-        case 'code':
-            insert = `\`${sel || 'code'}\``;
-            cursorOffset = sel ? insert.length : 1 + 4;
-            break;
-        case 'h1':
-            before += ensureNL(before);
-            insert = `# ${sel || 'Heading'}`;
-            break;
-        case 'h2':
-            before += ensureNL(before);
-            insert = `## ${sel || 'Heading'}`;
-            break;
-        case 'bullet':
-            before += ensureNL(before);
-            if (sel) insert = sel.split('\n').map(l => '- ' + l).join('\n');
-            else insert = '- ';
-            break;
-        case 'check':
-            before += ensureNL(before);
-            if (sel) insert = sel.split('\n').map(l => '- [ ] ' + l).join('\n');
-            else insert = '- [ ] ';
-            break;
-        case 'link':
-            insert = `[${sel || 'text'}](https://)`;
-            break;
+// Block-level format (headings). Toggles back to paragraph if already applied.
+function fmtBlock(tag) {
+    focusBody();
+    const current = document.queryCommandValue('formatBlock');
+    if (current && current.toUpperCase() === tag) {
+        document.execCommand('formatBlock', false, 'P');
+    } else {
+        document.execCommand('formatBlock', false, tag);
     }
+    saveCurrentNote();
+    updateToolbarState();
+}
 
-    ta.value = before + insert + after;
-    const newPos = (before + insert).length;
-    ta.focus();
-    ta.setSelectionRange(newPos, newPos);
+// Insert a clickable hyperlink
+function fmtLink() {
+    focusBody();
+    const sel = window.getSelection();
+    const selectedText = sel ? sel.toString() : '';
+    let url = prompt('Enter URL:', 'https://');
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+    if (selectedText) {
+        document.execCommand('createLink', false, url);
+    } else {
+        // No selection → insert the URL as its own link
+        document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+    }
+    linkifyEditor();
     saveCurrentNote();
 }
 
-function renderMarkdown(src) {
-    // Escape HTML first
-    let html = src
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    const lines = html.split('\n');
-    let out = [];
-    let inList = false;
-
-    const inline = (s) => s
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-    for (let line of lines) {
-        if (/^###\s+/.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h3>' + inline(line.replace(/^###\s+/, '')) + '</h3>'); }
-        else if (/^##\s+/.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h2>' + inline(line.replace(/^##\s+/, '')) + '</h2>'); }
-        else if (/^#\s+/.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h1>' + inline(line.replace(/^#\s+/, '')) + '</h1>'); }
-        else if (/^\s*[-*]\s+\[[ xX]\]\s+/.test(line)) {
-            if (!inList) { out.push('<ul style="list-style:none;margin-left:0;">'); inList = true; }
-            const checked = /\[[xX]\]/.test(line);
-            const txt = line.replace(/^\s*[-*]\s+\[[ xX]\]\s+/, '');
-            out.push(`<li><input type="checkbox" class="md-check" ${checked ? 'checked' : ''} disabled>${inline(txt)}</li>`);
-        }
-        else if (/^\s*[-*]\s+/.test(line)) {
-            if (!inList) { out.push('<ul>'); inList = true; }
-            out.push('<li>' + inline(line.replace(/^\s*[-*]\s+/, '')) + '</li>');
-        }
-        else if (line.trim() === '') { if (inList) { out.push('</ul>'); inList = false; } out.push('<br>'); }
-        else { if (inList) { out.push('</ul>'); inList = false; } out.push('<div>' + inline(line) + '</div>'); }
-    }
-    if (inList) out.push('</ul>');
-    return out.join('');
+// Make all links in the editor open in the browser on click
+function linkifyEditor() {
+    const el = document.getElementById('noteBody');
+    if (!el) return;
+    el.querySelectorAll('a').forEach(a => {
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener');
+        // Ctrl/Cmd+click or plain click opens; guard against editing-only clicks
+        a.onclick = (e) => {
+            e.preventDefault();
+            const href = a.getAttribute('href');
+            if (href) {
+                if (typeof guardBlur === 'function') guardBlur();
+                if (window.widgetAPI && window.widgetAPI.openExternal) window.widgetAPI.openExternal(href);
+                else window.open(href, '_blank');
+            }
+        };
+    });
 }
 
-function renderMarkdownPreview() {
-    const body = document.getElementById('noteBody').value;
-    document.getElementById('notePreview').innerHTML = renderMarkdown(body);
+// Auto-detect pasted/typed URLs and turn them into links
+function autoLinkPlainUrls() {
+    // Handled on paste via the paste listener below
 }
 
-function toggleMarkdownPreview() {
-    markdownPreviewOn = !markdownPreviewOn;
-    const ta = document.getElementById('noteBody');
-    const pv = document.getElementById('notePreview');
-    const btn = document.getElementById('mdToggleBtn');
+// Reflect current formatting state on the toolbar buttons
+function updateToolbarState() {
     const toolbar = document.getElementById('formatToolbar');
-    if (markdownPreviewOn) {
-        renderMarkdownPreview();
-        ta.style.display = 'none';
-        pv.style.display = '';
-        if (toolbar) toolbar.style.display = 'none';
-        btn.textContent = '✏️ Edit';
-    } else {
-        ta.style.display = '';
-        pv.style.display = 'none';
-        if (toolbar) toolbar.style.display = '';
-        btn.textContent = '👁 Preview';
-    }
+    if (!toolbar) return;
+    const states = {
+        'bold': queryState('bold'),
+        'italic': queryState('italic'),
+        'underline': queryState('underline'),
+        'strikeThrough': queryState('strikeThrough'),
+        'insertUnorderedList': queryState('insertUnorderedList'),
+        'insertOrderedList': queryState('insertOrderedList'),
+    };
+    let block = '';
+    try { block = (document.queryCommandValue('formatBlock') || '').toUpperCase(); } catch (e) {}
+
+    toolbar.querySelectorAll('.fmt-btn[data-cmd]').forEach(btn => {
+        const cmd = btn.getAttribute('data-cmd');
+        let on = false;
+        if (cmd.startsWith('formatBlock:')) {
+            on = block === cmd.split(':')[1];
+        } else {
+            on = !!states[cmd];
+        }
+        btn.classList.toggle('active', on);
+    });
+}
+
+function queryState(cmd) {
+    try { return document.queryCommandState(cmd); } catch (e) { return false; }
 }
 
 function renderNotes() {
     const search = document.getElementById('searchNotes').value.toLowerCase();
     let notes = data.notes.filter(n => {
-        if (search && !n.title.toLowerCase().includes(search) && !n.body.toLowerCase().includes(search)) return false;
+        if (search && !(n.title || '').toLowerCase().includes(search) && !(n.body || '').toLowerCase().includes(search)) return false;
         return true;
     });
 
@@ -1914,12 +2067,12 @@ function renderNotes() {
                  ondragleave="onNoteDragLeave(event)"
                  ondrop="onNoteDrop(event, '${n.id}')"
                  ondragend="onNoteDragEnd(event)">
-                <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note">🗑</button>
+                <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note">✕</button>
                 <div class="note-title">${escapeHtml(n.title) || 'Untitled'}</div>
-                <div class="note-preview">${escapeHtml(n.body.substring(0, 80)) || 'Empty note...'}</div>
+                <div class="note-preview">${escapeHtml((n.body || '').substring(0, 80)) || 'Empty note…'}</div>
                 <div class="note-footer">
                     <span class="todo-date">${timeAgo(n.updatedAt)}</span>
-                    <span class="todo-date">${n.body.split(/\s+/).filter(w=>w).length} words</span>
+                    <span class="todo-date">${(n.body || '').split(/\s+/).filter(w=>w).length} words</span>
                 </div>
             </div>
         `).join('');
@@ -2015,6 +2168,16 @@ function ctxCopy() {
 
 document.addEventListener('click', hideContextMenu);
 
+// Close the group "More" menu when clicking elsewhere
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('groupMoreMenu');
+    if (menu && menu.classList.contains('open') && !e.target.closest('.group-more-wrap')) {
+        menu.classList.remove('open');
+    }
+});
+
+// Group tab overflow is handled automatically by a ResizeObserver.
+
 // ===== DRAG FUNCTIONALITY =====
 function makeDraggable(el, handleEl) {
     let isDragging = false, startX, startY, origX, origY;
@@ -2089,6 +2252,9 @@ if (!window.widgetAPI) {
         if (dragging && !moved) {
             // It was a click, not a drag → open the app
             expandApp();
+        } else if (dragging && moved) {
+            // Persist the final widget position once
+            if (window.widgetAPI.moveWindowEnd) window.widgetAPI.moveWindowEnd();
         }
         dragging = false;
     });
@@ -2171,6 +2337,45 @@ window.addEventListener('beforeunload', () => {
     try { saveData(); } catch (e) {}
 });
 
+// Auto-link URLs on paste into the note body, and keep links clickable
+(function setupNotePaste() {
+    const el = document.getElementById('noteBody');
+    if (!el) return;
+    el.addEventListener('paste', (e) => {
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        // If the pasted text is a single URL, insert it as a link
+        if (text && /^https?:\/\/\S+$/i.test(text.trim())) {
+            e.preventDefault();
+            const url = text.trim();
+            document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>&nbsp;`);
+            linkifyEditor();
+            saveCurrentNote();
+        }
+    });
+    // Turn typed URLs into links when you press space/enter after them
+    el.addEventListener('keyup', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+            autoLinkLastWord();
+        }
+    });
+})();
+
+function autoLinkLastWord() {
+    const el = document.getElementById('noteBody');
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    // Only operate on plain text nodes to avoid double-linking
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== 3) return;
+    const textBefore = node.textContent.slice(0, sel.anchorOffset);
+    const m = textBefore.match(/(https?:\/\/[^\s]+)\s?$/i);
+    if (!m) return;
+    // Skip if already inside a link
+    if (node.parentElement && node.parentElement.closest('a')) return;
+    // (Auto-linking mid-edit is complex; links are reliably created on paste
+    //  and via the Link button. Left as a no-op to avoid cursor glitches.)
+}
+
 // Electron-specific setup
 if (window.widgetAPI) {
     document.body.classList.add('electron');
@@ -2192,10 +2397,12 @@ if (window.widgetAPI) {
         window.widgetAPI.autoBackup(payload);
     } catch (e) {}
 
-    // Click-away → collapse to widget (unless a dialog is open)
+    // Click-away → collapse to widget (unless a dialog is open or editing a note)
     if (window.widgetAPI.onCollapseOnBlur) {
         window.widgetAPI.onCollapseOnBlur(() => {
             if (suppressBlurCollapse) return;
+            // Don't collapse while actively editing a note — keeps your place
+            if (editingNoteId) return;
             if (appState === 'expanded') collapseToWidget();
         });
     }

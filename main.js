@@ -91,17 +91,19 @@ function createWindow() {
 
   // Remember the user's custom expanded size if they resized before
   if (settings.expandedW && settings.expandedH) {
-    EXPANDED_SIZE.width = settings.expandedW;
-    EXPANDED_SIZE.height = settings.expandedH;
+    EXPANDED_SIZE.width = Math.max(MIN_EXPANDED.width, settings.expandedW);
+    EXPANDED_SIZE.height = Math.max(MIN_EXPANDED.height, settings.expandedH);
   }
 
-  // Persist expanded size when the user resizes
+  // Persist expanded size when the user resizes (debounced)
+  let resizeSaveTimer = null;
   mainWindow.on('resize', () => {
     if (mainWindow.isResizable()) {
       const [w, h] = mainWindow.getSize();
-      saveSettings({ expandedW: w, expandedH: h });
       EXPANDED_SIZE.width = w;
       EXPANDED_SIZE.height = h;
+      if (resizeSaveTimer) clearTimeout(resizeSaveTimer);
+      resizeSaveTimer = setTimeout(() => { saveSettings({ expandedW: w, expandedH: h }); }, 400);
     }
   });
 
@@ -221,11 +223,15 @@ ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
   const nx = Math.round(mouseX - offsetX);
   const ny = Math.round(mouseY - offsetY);
   mainWindow.setPosition(nx, ny);
-  // If we're in widget mode, remember this as the anchor + persist it
+  // In widget mode, track the anchor in memory (persisted on drag-end, not every frame)
   if (!mainWindow.isResizable()) {
     widgetAnchor = { x: nx, y: ny };
-    saveSettings({ widgetX: nx, widgetY: ny });
   }
+});
+
+// Persist widget position once, when dragging ends
+ipcMain.on('move-window-end', () => {
+  if (widgetAnchor) saveSettings({ widgetX: widgetAnchor.x, widgetY: widgetAnchor.y });
 });
 
 ipcMain.on('set-always-on-top', (event, value) => {
@@ -278,6 +284,13 @@ ipcMain.on('open-backups-folder', () => {
   const dir = path.join(app.getPath('userData'), 'backups');
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
   require('electron').shell.openPath(dir);
+});
+
+// Open a hyperlink in the user's default browser
+ipcMain.on('open-external', (event, url) => {
+  if (url && /^https?:\/\//i.test(url)) {
+    require('electron').shell.openExternal(url);
+  }
 });
 
 // ===== APP LIFECYCLE =====
