@@ -39,7 +39,7 @@ function createWindow() {
     resizable: false,
     alwaysOnTop: true,         // real always-on-top
     skipTaskbar: false,
-    hasShadow: true,
+    hasShadow: false,          // no OS shadow — we style our own
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -107,17 +107,27 @@ function showWindow() {
 // ===== IPC: renderer asks main to resize/minimize =====
 ipcMain.on('resize-window', (event, state) => {
   if (!mainWindow) return;
-  const [x, y] = mainWindow.getPosition();
-  if (state === 'widget') {
-    mainWindow.setSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
-  } else if (state === 'expanded') {
-    mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height);
-  }
+  let [x, y] = mainWindow.getPosition();
+  const targetW = state === 'expanded' ? EXPANDED_SIZE.width : WIDGET_SIZE.width;
+  const targetH = state === 'expanded' ? EXPANDED_SIZE.height : WIDGET_SIZE.height;
+  mainWindow.setSize(targetW, targetH);
+
+  // Keep the window fully on the current display
+  const { workArea } = screen.getDisplayNearestPoint({ x, y });
+  x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - targetW, x));
+  y = Math.max(workArea.y, Math.min(workArea.y + workArea.height - targetH, y));
   mainWindow.setPosition(x, y);
 });
 
 ipcMain.on('minimize-to-tray', () => {
   if (mainWindow) mainWindow.hide();
+});
+
+// Move the OS window to an absolute position (used for widget dragging)
+ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
+  if (!mainWindow) return;
+  // Place the window so the cursor keeps the same grab offset
+  mainWindow.setPosition(Math.round(mouseX - offsetX), Math.round(mouseY - offsetY));
 });
 
 ipcMain.on('set-always-on-top', (event, value) => {

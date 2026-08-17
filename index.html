@@ -34,15 +34,24 @@
             overflow: hidden;
         }
 
-        /* Electron native drag regions — buttons/inputs stay clickable */
-        #widget, .titlebar { -webkit-app-region: drag; }
-        #widget .badge, .titlebar-btn, button, input, select, textarea,
+        /* Electron native drag regions — only the titlebar drags the window.
+           The widget uses JS-based drag+click detection so clicking opens it. */
+        .titlebar { -webkit-app-region: drag; }
+        .titlebar-btn, button, input, select, textarea,
         .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
 
         /* Electron: window itself is sized to content, so anchor top-left */
-        body.electron #widget { top: 8px; left: 8px; right: auto; cursor: default; }
-        body.electron #app { top: 0; left: 0; right: auto; width: 100%; max-height: 100vh; height: 100vh; border-radius: 12px; }
+        body.electron #widget { top: 8px; left: 8px; right: auto; cursor: grab; }
+        body.electron #app {
+            top: 0; left: 0; right: auto; width: 100%;
+            max-height: 100vh; height: 100vh; border-radius: 12px;
+            background: var(--bg);           /* solid, opaque */
+            opacity: 1;
+            box-shadow: none;
+        }
+        body.electron #app:hover { opacity: 1; }
         body.electron #taskbar-btn { display: none !important; }
+        body.electron .content { max-height: none; flex: 1; }
 
         /* ===== WIDGET (collapsed state) ===== */
         #widget {
@@ -57,8 +66,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 20px rgba(124, 92, 252, 0.4), 0 2px 8px rgba(0,0,0,0.3);
-            opacity: 0.85;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            opacity: 0.5;
             transition: opacity 0.2s, transform 0.2s, border-radius 0.3s;
             z-index: 99999;
             user-select: none;
@@ -66,8 +75,8 @@
         }
 
         #widget:hover {
-            opacity: 1;
-            transform: scale(1.08);
+            opacity: 0.8;
+            transform: scale(1.05);
         }
 
         #widget:active {
@@ -1412,6 +1421,43 @@ function makeDraggable(el, handleEl) {
 if (!window.widgetAPI) {
     makeDraggable(document.getElementById('widget'));
     makeDraggable(document.getElementById('app'), document.getElementById('titlebar'));
+} else {
+    // Electron: widget drags the whole OS window, and a click (no drag) opens the app.
+    const widgetEl = document.getElementById('widget');
+    let downX = 0, downY = 0, grabOffX = 0, grabOffY = 0, moved = false, dragging = false;
+
+    widgetEl.addEventListener('mousedown', (e) => {
+        dragging = true;
+        moved = false;
+        downX = e.screenX;
+        downY = e.screenY;
+        // Offset of the cursor within the window (window is at 0,0 origin on screen minus this)
+        grabOffX = e.clientX;
+        grabOffY = e.clientY;
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.screenX - downX;
+        const dy = e.screenY - downY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+        if (moved) {
+            // Absolute placement: keep cursor at the same spot within the widget
+            window.widgetAPI.moveWindow(e.screenX, e.screenY, grabOffX, grabOffY);
+        }
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (dragging && !moved) {
+            // It was a click, not a drag → open the app
+            expandApp();
+        }
+        dragging = false;
+    });
+
+    // Remove the inline onclick so it doesn't double-fire
+    widgetEl.removeAttribute('onclick');
 }
 
 // ===== HELPERS =====
