@@ -196,14 +196,20 @@ ipcMain.on('resize-window', (event, state) => {
     // Clear the minimum first, otherwise the window can't shrink to widget size
     mainWindow.setMinimumSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
     mainWindow.setResizable(false);
-    mainWindow.setSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
 
     // Restore the widget to its remembered position (clamped on-screen)
     let x = widgetAnchor ? widgetAnchor.x : curX;
     let y = widgetAnchor ? widgetAnchor.y : curY;
     x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - WIDGET_SIZE.width, x));
     y = Math.max(workArea.y, Math.min(workArea.y + workArea.height - WIDGET_SIZE.height, y));
-    mainWindow.setPosition(Math.round(x), Math.round(y));
+
+    // Atomic bounds set (position + size in one call) — reliably shrinks the window
+    mainWindow.setBounds({
+      x: Math.round(x),
+      y: Math.round(y),
+      width: WIDGET_SIZE.width,
+      height: WIDGET_SIZE.height,
+    });
   }
 });
 
