@@ -5,6 +5,7 @@ const fs = require('fs');
 let mainWindow = null;
 let tray = null;
 let alwaysOnTop = true;
+let isExpanded = false;   // explicit expanded/widget state for reliable blur handling
 
 // ===== SETTINGS PERSISTENCE =====
 // Stored in the OS user-data folder so it survives reinstalls.
@@ -75,7 +76,7 @@ function createWindow() {
   });
 
   // Keep it above fullscreen apps too
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  mainWindow.setAlwaysOnTop(true, 'floating');
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   mainWindow.loadFile('index.html');
@@ -114,9 +115,9 @@ function createWindow() {
 
   // Clicking away (losing focus) collapses the expanded app back to the widget
   mainWindow.on('blur', () => {
-    if (mainWindow && mainWindow.isResizable()) { // resizable == expanded mode
-      mainWindow.webContents.send('collapse-on-blur');
-    }
+    if (!mainWindow || !isExpanded) return;
+    // Tell the renderer to collapse (it handles the note-editing guard + UI swap)
+    mainWindow.webContents.send('collapse-on-blur');
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -140,7 +141,7 @@ function createTray() {
     { label: 'Show Widget', click: () => showWindow() },
     { label: 'Always on Top', type: 'checkbox', checked: alwaysOnTop, click: (item) => {
         alwaysOnTop = item.checked;
-        if (mainWindow) mainWindow.setAlwaysOnTop(alwaysOnTop, 'screen-saver');
+        if (mainWindow) mainWindow.setAlwaysOnTop(alwaysOnTop, 'floating');
       }
     },
     { label: 'Launch at Startup', type: 'checkbox', checked: isAutoLaunchEnabled(), click: (item) => {
@@ -172,6 +173,7 @@ ipcMain.on('resize-window', (event, state) => {
   if (state === 'expanded') {
     // Remember where the widget was, so collapse can restore it exactly
     widgetAnchor = { x: curX, y: curY };
+    isExpanded = true;
 
     mainWindow.setResizable(true);
     mainWindow.setMinimumSize(MIN_EXPANDED.width, MIN_EXPANDED.height);
@@ -196,6 +198,7 @@ ipcMain.on('resize-window', (event, state) => {
     // Clear the minimum first, otherwise the window can't shrink to widget size
     mainWindow.setMinimumSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
     mainWindow.setResizable(false);
+    isExpanded = false;
 
     // Restore the widget to its remembered position (clamped on-screen)
     let x = widgetAnchor ? widgetAnchor.x : curX;
@@ -242,7 +245,7 @@ ipcMain.on('move-window-end', () => {
 
 ipcMain.on('set-always-on-top', (event, value) => {
   alwaysOnTop = value;
-  if (mainWindow) mainWindow.setAlwaysOnTop(value, 'screen-saver');
+  if (mainWindow) mainWindow.setAlwaysOnTop(value, 'floating');
 });
 
 ipcMain.on('quit-app', () => {

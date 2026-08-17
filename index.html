@@ -1588,10 +1588,10 @@ function renderTodos() {
 }
 
 function renderGroupHeader(name, count, ungrouped) {
-    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:20px;height:20px;">🗑</button>`;
+    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:20px;height:20px;">✕</button>`;
     return `<div class="group-header">
-        <span class="group-name">${escapeHtml(name)}</span>
-        <span class="group-count">${count}</span>
+        <span class="group-name" style="color:var(--text-dim); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">${escapeHtml(name)}</span>
+        <span class="group-count" style="color:var(--text-dim); font-size:10px;">${count}</span>
         <div class="group-line"></div>
         ${delBtn}
     </div>`;
@@ -1601,8 +1601,10 @@ function renderTodoItem(t) {
     const priorityClass = t.priority !== 'none' && t.priority ? `priority-${t.priority}` : '';
     const isOverdue = t.dueDate && !t.completed && new Date(t.dueDate) < new Date();
     const isSelected = selectedIds.has(t.id);
+    const wipStyle = t.wip ? 'style="background:rgba(251,146,60,0.18); border-color:rgba(251,146,60,0.55);"' : '';
     return `
         <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass}"
+             ${wipStyle}
              draggable="${multiSelectMode ? 'false' : 'true'}"
              data-id="${t.id}"
              oncontextmenu="showContextMenu(event, '${t.id}')"
@@ -2058,6 +2060,14 @@ function updateToolbarState() {
             on = !!states[cmd];
         }
         btn.classList.toggle('active', on);
+        // Inline styling so the toggled state is always visible
+        if (on) {
+            btn.style.background = 'var(--accent)';
+            btn.style.color = '#fff';
+        } else {
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--text-dim)';
+        }
     });
 }
 
@@ -2420,17 +2430,6 @@ if (window.widgetAPI) {
             if (appState === 'expanded') collapseToWidget();
         });
     }
-    // Fallback: also listen to the renderer's own blur event
-    window.addEventListener('blur', () => {
-        if (suppressBlurCollapse) return;
-        if (editingNoteId) return;
-        // small delay so intra-app focus shifts don't trigger it
-        setTimeout(() => {
-            if (!document.hasFocus() && appState === 'expanded' && !suppressBlurCollapse && !editingNoteId) {
-                collapseToWidget();
-            }
-        }, 120);
-    });
 }
 
 // Set true briefly while a native dialog (file picker) is open so the
