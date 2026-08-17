@@ -952,10 +952,14 @@
             color: var(--text-dim);
         }
 
-        /* Todo item in WIP state */
+        /* Todo item in WIP state — clear orange background */
         .todo-item.wip {
-            border-left: 3px solid var(--warning);
-            background: rgba(251,191,36,0.03);
+            background: rgba(251, 146, 60, 0.18);
+            border-color: rgba(251, 146, 60, 0.5);
+        }
+        .todo-item.wip:hover {
+            background: rgba(251, 146, 60, 0.26);
+            border-color: var(--warning);
         }
     </style>
 </head>
@@ -1005,8 +1009,8 @@
         </div>
 
         <!-- Group tabs + add-group + multi-select -->
-        <div class="group-bar">
-            <div class="group-tabs" id="groupTabs"></div>
+        <div class="group-bar" style="display:flex; flex-direction:row; align-items:center; gap:6px;">
+            <div class="group-tabs" id="groupTabs" style="display:flex; flex-direction:row; align-items:center; gap:6px; flex:1; min-width:0; overflow-x:auto;"></div>
             <button class="icon-pill" id="addGroupBtn" onclick="promptAddGroup()" title="Add group">+</button>
             <button class="icon-pill multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()" title="Select multiple">☑</button>
         </div>
@@ -1403,11 +1407,18 @@ function renderGroupTabs() {
     }
     data.groups.forEach(g => tabs.push({ key: g, label: g, deletable: true }));
 
-    const tabHtml = (t) => `
-        <div class="group-tab ${active === t.key ? 'active' : ''}" onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')">
+    const tabHtml = (t) => {
+        const isActive = active === t.key;
+        const base = 'flex-shrink:0; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; font-size:11px; font-weight:500; border-radius:7px; white-space:nowrap; cursor:pointer; border:1px solid var(--border);';
+        const style = isActive
+            ? base + ' background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;'
+            : base + ' background:transparent; color:var(--text-dim);';
+        return `
+        <div class="group-tab ${isActive ? 'active' : ''}" style="${style}" onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')">
             <span>${escapeHtml(t.label)}</span>
-            ${t.deletable ? `<span class="gt-del" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">✕</span>` : ''}
+            ${t.deletable ? `<span class="gt-del" style="font-size:10px; opacity:0.6; cursor:pointer;" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">✕</span>` : ''}
         </div>`;
+    };
 
     el.innerHTML = tabs.map(tabHtml).join('');
 }
@@ -1605,7 +1616,6 @@ function renderTodoItem(t) {
             <div class="todo-body">
                 <div class="todo-text" ondblclick="startEditTodo('${t.id}', this)" title="Double-click to edit">${escapeHtml(t.text)}</div>
                 <div class="todo-meta">
-                    ${t.wip ? '<span class="wip-badge">WIP</span>' : ''}
                     ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:rgba(124,92,252,0.2);color:var(--accent);">↻ ${t.repeat}</span>` : ''}
                     ${(t.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
                     ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}</span>` : ''}
@@ -2406,11 +2416,21 @@ if (window.widgetAPI) {
     if (window.widgetAPI.onCollapseOnBlur) {
         window.widgetAPI.onCollapseOnBlur(() => {
             if (suppressBlurCollapse) return;
-            // Don't collapse while actively editing a note — keeps your place
             if (editingNoteId) return;
             if (appState === 'expanded') collapseToWidget();
         });
     }
+    // Fallback: also listen to the renderer's own blur event
+    window.addEventListener('blur', () => {
+        if (suppressBlurCollapse) return;
+        if (editingNoteId) return;
+        // small delay so intra-app focus shifts don't trigger it
+        setTimeout(() => {
+            if (!document.hasFocus() && appState === 'expanded' && !suppressBlurCollapse && !editingNoteId) {
+                collapseToWidget();
+            }
+        }, 120);
+    });
 }
 
 // Set true briefly while a native dialog (file picker) is open so the
