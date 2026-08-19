@@ -910,6 +910,12 @@
         }
         .todo-check.selected::after { content: '✓'; color: #fff; font-size: 10px; font-weight: 700; }
 
+        /* Distinctly highlight selected tasks */
+        .todo-item.is-selected {
+            background: rgba(124, 92, 252, 0.12);
+            border-color: var(--accent);
+        }
+
         /* WIP badge */
         .wip-badge {
             font-size: 9px;
@@ -1019,6 +1025,10 @@
         <!-- Multi-select action row (only shown in select mode) -->
         <div class="group-bar" id="multiSelectBar" style="display:none; background:var(--surface);">
             <button class="filter-btn" id="selectAllBtn" onclick="toggleSelectAll()">Select All</button>
+            <select class="priority-select" id="massGroupSelect" onchange="massReassignGroup(this.value); this.value='';" title="Move selected to group">
+                <option value="">Move to…</option>
+                <option value="__none__">No Group</option>
+            </select>
             <button class="filter-btn copy-btn" id="copyBtn" onclick="copySelected()">Copy</button>
             <button class="filter-btn delete-selected-btn" id="deleteSelectedBtn" onclick="deleteSelected()">Delete</button>
             <span class="selected-count" id="selectedCount">0 selected</span>
@@ -1433,6 +1443,7 @@ function refreshGroupSelectors() {
 }
 
 function renderGroupTabs() {
+    refreshMassGroupSelect();
     const el = document.getElementById('groupTabs');
     if (!el) return;
     const active = document.getElementById('groupFilter').value;
@@ -1451,7 +1462,11 @@ function renderGroupTabs() {
             ? base + ' background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;'
             : base + ' background:transparent; color:var(--text-dim);';
         return `
-        <div class="group-tab ${isActive ? 'active' : ''}" style="${style}" onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')">
+        <div class="group-tab ${isActive ? 'active' : ''}" style="${style}"
+             onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')"
+             ondragover="event.preventDefault(); this.style.outline='2px solid var(--accent)';"
+             ondragleave="this.style.outline='';"
+             ondrop="event.preventDefault(); this.style.outline=''; dropOnGroupTab('${t.key.replace(/'/g, "\\'")}');">
             <span>${escapeHtml(t.label)}</span>
             ${t.deletable ? `<span class="gt-del" style="font-size:10px; opacity:0.6; cursor:pointer;" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">✕</span>` : ''}
         </div>`;
@@ -1462,6 +1477,20 @@ function renderGroupTabs() {
 
 function selectGroupTab(key) {
     document.getElementById('groupFilter').value = key;
+    renderGroupTabs();
+    renderTodos();
+}
+
+// Drop a task onto a group tab to reassign it
+function dropOnGroupTab(groupKey) {
+    if (!dragSrcId) return;
+    const task = data.todos.find(t => t.id === dragSrcId);
+    if (!task) return;
+    if (groupKey === 'all') return; // "All" tab is not a target
+    task.group = (groupKey === '__none__') ? '' : groupKey;
+    task.section = ''; // clear section when moving to a new group
+    dragSrcId = null;
+    saveData();
     renderGroupTabs();
     renderTodos();
 }
@@ -1758,7 +1787,7 @@ function renderTodoItem(t) {
     const isSelected = selectedIds.has(t.id);
     const wipStyle = t.wip ? 'style="background:rgba(251,146,60,0.18); border-color:rgba(251,146,60,0.55);"' : '';
     return `
-        <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass}"
+        <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass} ${isSelected ? 'is-selected' : ''}"
              ${wipStyle}
              draggable="${multiSelectMode ? 'false' : 'true'}"
              data-id="${t.id}"
@@ -2016,9 +2045,39 @@ function deleteSelected() {
     const count = removed.length;
     data.todos = data.todos.filter(t => !selectedIds.has(t.id));
     selectedIds.clear();
+    multiSelectMode = false;
+    document.getElementById('multiSelectBtn').classList.remove('active');
+    document.getElementById('multiSelectBar').style.display = 'none';
     saveData();
     renderTodos();
     showToast(`${count} task${count > 1 ? 's' : ''} deleted`, { type: 'todos', items: removed });
+}
+
+// Mass reassign all selected tasks to a different group
+function massReassignGroup(group) {
+    if (!group || selectedIds.size === 0) return;
+    const targetGroup = group === '__none__' ? '' : group;
+    data.todos.forEach(t => {
+        if (selectedIds.has(t.id)) {
+            t.group = targetGroup;
+            t.section = ''; // clear section when moving groups
+        }
+    });
+    selectedIds.clear();
+    multiSelectMode = false;
+    document.getElementById('multiSelectBtn').classList.remove('active');
+    document.getElementById('multiSelectBar').style.display = 'none';
+    saveData();
+    renderTodos();
+    showToast(`Moved to ${targetGroup || 'Ungrouped'}`, null);
+}
+
+// Refresh the mass-group dropdown with current groups
+function refreshMassGroupSelect() {
+    const sel = document.getElementById('massGroupSelect');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Move to…</option><option value="__none__">No Group</option>' +
+        data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
 }
 
 function toggleSelect(id) {
