@@ -659,6 +659,21 @@
         .context-menu-item.danger { color: var(--danger); }
         .context-menu-item.danger:hover { background: rgba(240,96,96,0.1); }
 
+        .context-menu-sub { position: relative; }
+        .context-sub-menu {
+            display: none;
+            flex-direction: column;
+            gap: 2px;
+            padding: 4px 8px 4px 16px;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+        .context-sub-menu.open { display: flex; }
+        .context-sub-menu .context-menu-item {
+            font-size: 11px;
+            padding: 6px 10px;
+        }
+
         .separator { height: 1px; background: var(--border); margin: 4px 0; }
 
         /* Tag colors */
@@ -1014,7 +1029,7 @@
         <input type="hidden" id="groupFilter" value="all">
 
         <!-- Multi-select action row (only shown in select mode) -->
-        <div class="group-bar" id="multiSelectBar" style="display:none;">
+        <div class="group-bar" id="multiSelectBar" style="display:none; background:var(--surface);">
             <button class="filter-btn" id="selectAllBtn" onclick="toggleSelectAll()">Select All</button>
             <button class="filter-btn copy-btn" id="copyBtn" onclick="copySelected()">Copy</button>
             <button class="filter-btn delete-selected-btn" id="deleteSelectedBtn" onclick="deleteSelected()">Delete</button>
@@ -1082,7 +1097,8 @@
                  data-placeholder="Start writing..."
                  oninput="onNoteInput()"
                  onkeyup="updateToolbarState()"
-                 onmouseup="updateToolbarState()"></div>
+                 onmouseup="updateToolbarState()"
+                 onblur="linkifyEditor(); saveCurrentNote();"></div>
             <div class="add-bar">
                 <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
                 <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 words</span>
@@ -1105,6 +1121,11 @@
     <div class="context-menu-item" onclick="ctxSetPriority('high')">🔴 High Priority</div>
     <div class="context-menu-item" onclick="ctxSetPriority('medium')">🟡 Medium Priority</div>
     <div class="context-menu-item" onclick="ctxSetPriority('low')">🟢 Low Priority</div>
+    <div class="separator"></div>
+    <div class="context-menu-sub" id="ctxGroupSub">
+        <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxGroupMenu()">📁 Move to Group ▸</div>
+        <div class="context-sub-menu" id="ctxGroupMenu"></div>
+    </div>
     <div class="separator"></div>
     <div class="context-menu-item" onclick="ctxDuplicate()">📄 Duplicate</div>
     <div class="context-menu-item" onclick="ctxCopy()">📋 Copy Text</div>
@@ -2023,14 +2044,22 @@ function fmtLink() {
     input.focus();
 }
 
-// Make all links in the editor open in the browser on click
+// Make all links in the editor open in the browser on click,
+// and auto-wrap plain-text URLs as clickable links.
 function linkifyEditor() {
     const el = document.getElementById('noteBody');
     if (!el) return;
+
+    // Auto-wrap plain-text URLs that aren't already inside <a> tags
+    autoLinkTextNodes(el);
+
+    // Make all <a> tags clickable (open in external browser)
     el.querySelectorAll('a').forEach(a => {
         a.setAttribute('target', '_blank');
         a.setAttribute('rel', 'noopener');
-        // Ctrl/Cmd+click or plain click opens; guard against editing-only clicks
+        a.style.color = 'var(--accent)';
+        a.style.textDecoration = 'underline';
+        a.style.cursor = 'pointer';
         a.onclick = (e) => {
             e.preventDefault();
             const href = a.getAttribute('href');
@@ -2040,6 +2069,38 @@ function linkifyEditor() {
                 else window.open(href, '_blank');
             }
         };
+    });
+}
+
+// Walk text nodes and wrap URLs that aren't already inside a link
+function autoLinkTextNodes(root) {
+    const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const toReplace = [];
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        // Skip if already inside a link
+        if (node.parentElement && node.parentElement.closest('a')) continue;
+        if (urlRegex.test(node.textContent)) {
+            toReplace.push(node);
+        }
+        urlRegex.lastIndex = 0;
+    }
+    toReplace.forEach(node => {
+        const frag = document.createDocumentFragment();
+        const parts = node.textContent.split(urlRegex);
+        parts.forEach(part => {
+            if (urlRegex.test(part)) {
+                const a = document.createElement('a');
+                a.href = part;
+                a.textContent = part;
+                frag.appendChild(a);
+            } else {
+                frag.appendChild(document.createTextNode(part));
+            }
+            urlRegex.lastIndex = 0;
+        });
+        node.parentNode.replaceChild(frag, node);
     });
 }
 
@@ -2153,6 +2214,13 @@ function showContextMenu(e, id) {
     menu.style.display = 'block';
     menu.style.left = e.clientX + 'px';
     menu.style.top = e.clientY + 'px';
+    // Close the group sub-menu and populate it with current groups
+    const sub = document.getElementById('ctxGroupMenu');
+    sub.classList.remove('open');
+    const todo = data.todos.find(t => t.id === id);
+    const currentGroup = todo ? (todo.group || '') : '';
+    sub.innerHTML = `<div class="context-menu-item ${!currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('')">No Group</div>` +
+        data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('${g.replace(/'/g, "\\'")}')">${escapeHtml(g)}</div>`).join('');
 }
 
 function hideContextMenu() {
@@ -2184,6 +2252,21 @@ function ctxDelete() {
 
 function ctxToggleWip() {
     toggleWip(contextTargetId);
+    hideContextMenu();
+}
+
+function toggleCtxGroupMenu() {
+    const sub = document.getElementById('ctxGroupMenu');
+    sub.classList.toggle('open');
+}
+
+function ctxMoveToGroup(group) {
+    const todo = data.todos.find(t => t.id === contextTargetId);
+    if (todo) {
+        todo.group = group;
+        saveData();
+        renderTodos();
+    }
     hideContextMenu();
 }
 
