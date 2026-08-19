@@ -903,23 +903,25 @@
             white-space: nowrap;
         }
 
-        /* Multi-select checkbox on todo items */
+        /* Multi-select checkbox on todo items — always visible on hover, always in select mode */
         .todo-select {
             width: 16px;
             height: 16px;
-            border: 2px solid var(--accent);
+            border: 2px solid var(--border);
             border-radius: 4px;
             cursor: pointer;
             flex-shrink: 0;
             margin-top: 3px;
-            display: none;
+            display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.15s;
+            opacity: 0;
         }
 
-        .multi-select-mode .todo-select { display: flex; }
-        .todo-select.selected { background: var(--accent); }
+        .todo-item:hover .todo-select { opacity: 0.6; }
+        .multi-select-mode .todo-select { opacity: 1; border-color: var(--accent); }
+        .todo-select.selected { opacity: 1; background: var(--accent); border-color: var(--accent); }
         .todo-select.selected::after { content: '✓'; color: #fff; font-size: 10px; font-weight: 700; }
 
         /* WIP badge */
@@ -1608,13 +1610,15 @@ function renderTodos() {
         let html = '';
         // Grouped sections first (in group order)
         data.groups.forEach(g => {
-            if (grouped[g] && grouped[g].length) {
-                html += renderGroupHeader(g, grouped[g].length);
+            const groupTasks = grouped[g] || [];
+            const sections = data.sections[g] || [];
+            // Show the group if it has tasks OR sections defined
+            if (groupTasks.length || sections.length) {
+                html += renderGroupHeader(g, groupTasks.length);
                 // Sub-group by section within this group
-                const sections = data.sections[g] || [];
                 const sectionedTasks = {};
                 const unsectioned = [];
-                grouped[g].forEach(t => {
+                groupTasks.forEach(t => {
                     if (t.section && sections.includes(t.section)) {
                         if (!sectionedTasks[t.section]) sectionedTasks[t.section] = [];
                         sectionedTasks[t.section].push(t);
@@ -1624,10 +1628,11 @@ function renderTodos() {
                 });
                 // Render unsectioned first
                 html += unsectioned.map(renderTodoItem).join('');
-                // Then each section
+                // Then each section — ALWAYS show, even if empty
                 sections.forEach(sec => {
-                    if (sectionedTasks[sec] && sectionedTasks[sec].length) {
-                        html += renderSectionHeader(g, sec, sectionedTasks[sec].length);
+                    const count = sectionedTasks[sec] ? sectionedTasks[sec].length : 0;
+                    html += renderSectionHeader(g, sec, count);
+                    if (count > 0) {
                         html += sectionedTasks[sec].map(renderTodoItem).join('');
                     }
                 });
@@ -1830,10 +1835,40 @@ function onTodoDragEnd(e) {
 
 // ===== MULTI-SELECT & COPY =====
 function toggleMultiSelect() {
-    multiSelectMode = !multiSelectMode;
-    if (!multiSelectMode) selectedIds.clear();
-    document.getElementById('multiSelectBtn').classList.toggle('active', multiSelectMode);
-    document.getElementById('multiSelectBar').style.display = multiSelectMode ? '' : 'none';
+    // If already in select mode with items selected, deselect all and exit mode
+    if (multiSelectMode && selectedIds.size > 0) {
+        selectedIds.clear();
+        multiSelectMode = false;
+        document.getElementById('multiSelectBtn').classList.remove('active');
+        document.getElementById('multiSelectBar').style.display = 'none';
+        renderTodos();
+        return;
+    }
+    // If not in select mode, enter and select all visible
+    if (!multiSelectMode) {
+        multiSelectMode = true;
+        document.getElementById('multiSelectBtn').classList.add('active');
+        // Select all visible tasks
+        const search = document.getElementById('searchTodos').value.toLowerCase();
+        const groupFilter = document.getElementById('groupFilter').value;
+        data.todos.forEach(t => {
+            if (currentFilter === 'active' && (t.completed || t.wip)) return;
+            if (currentFilter === 'wip' && !t.wip) return;
+            if (currentFilter === 'done' && !t.completed) return;
+            if (groupFilter === '__none__' && t.group) return;
+            if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return;
+            if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return;
+            selectedIds.add(t.id);
+        });
+        document.getElementById('multiSelectBar').style.display = '';
+        renderTodos();
+        return;
+    }
+    // Exit mode
+    multiSelectMode = false;
+    selectedIds.clear();
+    document.getElementById('multiSelectBtn').classList.remove('active');
+    document.getElementById('multiSelectBar').style.display = 'none';
     renderTodos();
 }
 
@@ -1928,6 +1963,15 @@ function deleteSelected() {
 function toggleSelect(id) {
     if (selectedIds.has(id)) selectedIds.delete(id);
     else selectedIds.add(id);
+    // Auto-show/hide the action bar based on whether anything is selected
+    if (selectedIds.size > 0 && !multiSelectMode) {
+        multiSelectMode = true;
+        document.getElementById('multiSelectBtn').classList.add('active');
+    } else if (selectedIds.size === 0 && multiSelectMode) {
+        multiSelectMode = false;
+        document.getElementById('multiSelectBtn').classList.remove('active');
+    }
+    document.getElementById('multiSelectBar').style.display = selectedIds.size > 0 ? '' : 'none';
     renderTodos();
 }
 
@@ -2627,16 +2671,39 @@ function autoLinkLastWord() {
     const el = document.getElementById('noteBody');
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
-    // Only operate on plain text nodes to avoid double-linking
     const node = sel.anchorNode;
     if (!node || node.nodeType !== 3) return;
+    if (node.parentElement && node.parentElement.closest('a')) return;
+
     const textBefore = node.textContent.slice(0, sel.anchorOffset);
     const m = textBefore.match(/(https?:\/\/[^\s]+)\s?$/i);
     if (!m) return;
-    // Skip if already inside a link
-    if (node.parentElement && node.parentElement.closest('a')) return;
-    // (Auto-linking mid-edit is complex; links are reliably created on paste
-    //  and via the Link button. Left as a no-op to avoid cursor glitches.)
+
+    const url = m[1];
+    const urlStart = sel.anchorOffset - m[0].length;
+    const urlEnd = urlStart + url.length;
+
+    // Create a range covering just the URL text
+    const range = document.createRange();
+    range.setStart(node, urlStart);
+    range.setEnd(node, urlEnd);
+
+    // Wrap it in a link
+    const a = document.createElement('a');
+    a.href = url;
+    a.textContent = url;
+    range.deleteContents();
+    range.insertNode(a);
+
+    // Move cursor after the link
+    const newRange = document.createRange();
+    newRange.setStartAfter(a);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+
+    linkifyEditor();
+    saveCurrentNote();
 }
 
 // Electron-specific setup
