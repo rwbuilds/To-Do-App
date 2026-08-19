@@ -1046,8 +1046,11 @@
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
             </select>
-            <select class="priority-select" id="groupSelect" title="Group">
+            <select class="priority-select" id="groupSelect" title="Group" onchange="refreshSectionSelect()">
                 <option value="">No Group</option>
+            </select>
+            <select class="priority-select" id="sectionSelect" title="Section">
+                <option value="">No Section</option>
             </select>
             <select class="priority-select" id="repeatSelect" title="Repeat">
                 <option value="none">Repeat: Off</option>
@@ -1126,6 +1129,10 @@
         <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxGroupMenu()">📁 Move to Group ▸</div>
         <div class="context-sub-menu" id="ctxGroupMenu"></div>
     </div>
+    <div class="context-menu-sub" id="ctxSectionSub">
+        <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxSectionMenu()">📂 Move to Section ▸</div>
+        <div class="context-sub-menu" id="ctxSectionMenu"></div>
+    </div>
     <div class="separator"></div>
     <div class="context-menu-item" onclick="ctxDuplicate()">📄 Duplicate</div>
     <div class="context-menu-item" onclick="ctxCopy()">📋 Copy Text</div>
@@ -1151,10 +1158,11 @@ function loadData() {
         if (saved) {
             const d = JSON.parse(saved);
             if (!d.groups) d.groups = [];
+            if (!d.sections) d.sections = {};  // { groupName: [section1, section2, ...] }
             return d;
         }
     } catch(e) {}
-    return { todos: [], notes: [], groups: [] };
+    return { todos: [], notes: [], groups: [], sections: {} };
 }
 
 function saveData() {
@@ -1364,6 +1372,9 @@ function addTodo() {
         }
     }
 
+    // Section: use the dropdown if set
+    const section = document.getElementById('sectionSelect').value || '';
+
     data.todos.unshift({
         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
         text: cleanText || text,
@@ -1372,6 +1383,7 @@ function addTodo() {
         priority: priority,
         tags: tags,
         group: group,
+        section: section,
         dueDate: dueDate,
         repeat: repeat,
         createdAt: new Date().toISOString(),
@@ -1379,6 +1391,7 @@ function addTodo() {
 
     input.value = '';
     document.getElementById('prioritySelect').value = 'none';
+    document.getElementById('sectionSelect').value = '';
     document.getElementById('dueInput').value = '';
     document.getElementById('repeatSelect').value = 'none';
     saveData();
@@ -1402,10 +1415,13 @@ function addGroup() {
 
 function deleteGroup(name) {
     data.groups = data.groups.filter(g => g !== name);
-    // Ungroup tasks that were in this group
-    data.todos.forEach(t => { if (t.group === name) t.group = ''; });
+    // Ungroup tasks that were in this group and clear their sections
+    data.todos.forEach(t => { if (t.group === name) { t.group = ''; t.section = ''; } });
+    // Remove the group's sections
+    delete data.sections[name];
     saveData();
     refreshGroupSelectors();
+    refreshSectionSelect();
     renderTodos();
 }
 
@@ -1594,7 +1610,27 @@ function renderTodos() {
         data.groups.forEach(g => {
             if (grouped[g] && grouped[g].length) {
                 html += renderGroupHeader(g, grouped[g].length);
-                html += grouped[g].map(renderTodoItem).join('');
+                // Sub-group by section within this group
+                const sections = data.sections[g] || [];
+                const sectionedTasks = {};
+                const unsectioned = [];
+                grouped[g].forEach(t => {
+                    if (t.section && sections.includes(t.section)) {
+                        if (!sectionedTasks[t.section]) sectionedTasks[t.section] = [];
+                        sectionedTasks[t.section].push(t);
+                    } else {
+                        unsectioned.push(t);
+                    }
+                });
+                // Render unsectioned first
+                html += unsectioned.map(renderTodoItem).join('');
+                // Then each section
+                sections.forEach(sec => {
+                    if (sectionedTasks[sec] && sectionedTasks[sec].length) {
+                        html += renderSectionHeader(g, sec, sectionedTasks[sec].length);
+                        html += sectionedTasks[sec].map(renderTodoItem).join('');
+                    }
+                });
             }
         });
         // Ungrouped
@@ -1620,12 +1656,94 @@ function renderTodos() {
 
 function renderGroupHeader(name, count, ungrouped) {
     const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:18px;height:18px;flex-shrink:0;">✕</button>`;
+    const addSecBtn = ungrouped ? '' : `<button class="todo-action-btn" onclick="promptAddSection('${escapeHtml(name)}')" title="Add section" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">+</button>`;
     return `<div class="group-header" style="display:flex; flex-direction:row; align-items:center; gap:8px; padding:8px 4px 4px;">
         <span class="group-name" style="color:var(--text-dim); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; flex-shrink:0;">${escapeHtml(name)}</span>
         <span class="group-count" style="color:var(--text-dim); font-size:10px; flex-shrink:0;">${count}</span>
         <div class="group-line" style="flex:1; height:1px; background:var(--border);"></div>
+        ${addSecBtn}
         ${delBtn}
     </div>`;
+}
+
+function renderSectionHeader(groupName, sectionName, count) {
+    return `<div class="section-header" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px;">
+        <span style="color:var(--accent); font-size:9px; font-weight:600; letter-spacing:0.3px; flex-shrink:0;">▸ ${escapeHtml(sectionName)}</span>
+        <span style="color:var(--text-dim); font-size:9px; flex-shrink:0;">${count}</span>
+        <div style="flex:1; height:1px; background:var(--border);"></div>
+        <button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">✕</button>
+    </div>`;
+}
+
+// ===== SECTION MANAGEMENT =====
+
+// Add a section to a group via inline input in the group header area
+function promptAddSection(groupName) {
+    // Find the group header element and insert an input after it
+    const headers = document.querySelectorAll('.group-header');
+    let targetHeader = null;
+    headers.forEach(h => {
+        if (h.querySelector('.group-name') && h.querySelector('.group-name').textContent === groupName) {
+            targetHeader = h;
+        }
+    });
+    if (!targetHeader) return;
+    if (document.getElementById('inlineSectionInput')) {
+        document.getElementById('inlineSectionInput').focus();
+        return;
+    }
+    const input = document.createElement('input');
+    input.id = 'inlineSectionInput';
+    input.type = 'text';
+    input.placeholder = 'Section name…';
+    input.className = 'search-input';
+    input.style.cssText = 'max-width:160px; margin:4px 0 4px 12px; font-size:11px;';
+
+    const commit = () => {
+        const name = input.value.trim();
+        input.remove();
+        if (name) {
+            if (!data.sections[groupName]) data.sections[groupName] = [];
+            if (!data.sections[groupName].includes(name)) {
+                data.sections[groupName].push(name);
+                saveData();
+                refreshSectionSelect();
+                renderTodos();
+            }
+        }
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); input.remove(); }
+    });
+    input.addEventListener('blur', commit);
+
+    targetHeader.insertAdjacentElement('afterend', input);
+    input.focus();
+}
+
+function deleteSection(groupName, sectionName) {
+    if (!data.sections[groupName]) return;
+    data.sections[groupName] = data.sections[groupName].filter(s => s !== sectionName);
+    // Unassign tasks from this section (keep them in the group)
+    data.todos.forEach(t => { if (t.group === groupName && t.section === sectionName) t.section = ''; });
+    saveData();
+    refreshSectionSelect();
+    renderTodos();
+}
+
+function refreshSectionSelect() {
+    const sel = document.getElementById('sectionSelect');
+    if (!sel) return;
+    // Determine which group is active (from dropdown or group tab)
+    let group = document.getElementById('groupSelect').value || '';
+    if (!group) {
+        const activeTab = document.getElementById('groupFilter').value;
+        if (activeTab && activeTab !== 'all' && activeTab !== '__none__') group = activeTab;
+    }
+    const sections = group ? (data.sections[group] || []) : [];
+    sel.innerHTML = '<option value="">No Section</option>' +
+        sections.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 }
 
 function renderTodoItem(t) {
@@ -2221,6 +2339,21 @@ function showContextMenu(e, id) {
     const currentGroup = todo ? (todo.group || '') : '';
     sub.innerHTML = `<div class="context-menu-item ${!currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('')">No Group</div>` +
         data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('${g.replace(/'/g, "\\'")}')">${escapeHtml(g)}</div>`).join('');
+
+    // Populate section sub-menu (only if the task has a group with sections)
+    const secSub = document.getElementById('ctxSectionMenu');
+    secSub.classList.remove('open');
+    const taskGroup = todo ? (todo.group || '') : '';
+    const groupSections = taskGroup ? (data.sections[taskGroup] || []) : [];
+    const currentSection = todo ? (todo.section || '') : '';
+    if (groupSections.length > 0) {
+        document.getElementById('ctxSectionSub').style.display = '';
+        secSub.innerHTML = `<div class="context-menu-item ${!currentSection ? 'active' : ''}" onclick="ctxMoveToSection('')">No Section</div>` +
+            groupSections.map(s => `<div class="context-menu-item ${s === currentSection ? 'active' : ''}" onclick="ctxMoveToSection('${s.replace(/'/g, "\\'")}')">${escapeHtml(s)}</div>`).join('');
+    } else {
+        // Hide section menu if the task's group has no sections
+        document.getElementById('ctxSectionSub').style.display = 'none';
+    }
 }
 
 function hideContextMenu() {
@@ -2264,6 +2397,22 @@ function ctxMoveToGroup(group) {
     const todo = data.todos.find(t => t.id === contextTargetId);
     if (todo) {
         todo.group = group;
+        todo.section = '';  // clear section when moving groups
+        saveData();
+        renderTodos();
+    }
+    hideContextMenu();
+}
+
+function toggleCtxSectionMenu() {
+    const sub = document.getElementById('ctxSectionMenu');
+    sub.classList.toggle('open');
+}
+
+function ctxMoveToSection(section) {
+    const todo = data.todos.find(t => t.id === contextTargetId);
+    if (todo) {
+        todo.section = section;
         saveData();
         renderTodos();
     }
@@ -2434,6 +2583,7 @@ document.addEventListener('keydown', (e) => {
 // ===== RENDER ALL =====
 function renderAll() {
     refreshGroupSelectors();
+    refreshSectionSelect();
     renderTodos();
     renderNotes();
     updateBadge();
@@ -2442,6 +2592,7 @@ function renderAll() {
 
 // ===== INIT =====
 refreshGroupSelectors();
+refreshSectionSelect();
 updateBadge();
 
 // Safety net: persist data if the window is ever closed/reloaded
