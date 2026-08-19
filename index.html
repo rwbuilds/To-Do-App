@@ -903,26 +903,12 @@
             white-space: nowrap;
         }
 
-        /* Multi-select checkbox on todo items — always visible on hover, always in select mode */
-        .todo-select {
-            width: 16px;
-            height: 16px;
-            border: 2px solid var(--border);
-            border-radius: 4px;
-            cursor: pointer;
-            flex-shrink: 0;
-            margin-top: 3px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.15s;
-            opacity: 0;
+        /* Multi-select: the done checkmark becomes a selection checkbox when in select mode */
+        .todo-check.selected {
+            background: var(--accent);
+            border-color: var(--accent);
         }
-
-        .todo-item:hover .todo-select { opacity: 0.6; }
-        .multi-select-mode .todo-select { opacity: 1; border-color: var(--accent); }
-        .todo-select.selected { opacity: 1; background: var(--accent); border-color: var(--accent); }
-        .todo-select.selected::after { content: '✓'; color: #fff; font-size: 10px; font-weight: 700; }
+        .todo-check.selected::after { content: '✓'; color: #fff; font-size: 10px; font-weight: 700; }
 
         /* WIP badge */
         .wip-badge {
@@ -1153,6 +1139,8 @@ let contextTargetId = null;
 let appState = 'widget'; // 'widget', 'expanded', 'minimized'
 let multiSelectMode = false;
 let selectedIds = new Set();
+let collapsedSections = new Set();  // tracks "group:section" keys that are collapsed
+let dragSectionSrc = null;          // { group, section } when dragging a section header
 
 function loadData() {
     try {
@@ -1608,36 +1596,39 @@ function renderTodos() {
         });
 
         let html = '';
-        // Grouped sections first (in group order)
-        data.groups.forEach(g => {
-            const groupTasks = grouped[g] || [];
-            const sections = data.sections[g] || [];
-            // Show the group if it has tasks OR sections defined
-            if (groupTasks.length || sections.length) {
-                html += renderGroupHeader(g, groupTasks.length);
-                // Sub-group by section within this group
-                const sectionedTasks = {};
-                const unsectioned = [];
-                groupTasks.forEach(t => {
-                    if (t.section && sections.includes(t.section)) {
-                        if (!sectionedTasks[t.section]) sectionedTasks[t.section] = [];
-                        sectionedTasks[t.section].push(t);
-                    } else {
-                        unsectioned.push(t);
-                    }
-                });
-                // Render unsectioned first
-                html += unsectioned.map(renderTodoItem).join('');
-                // Then each section — ALWAYS show, even if empty
-                sections.forEach(sec => {
-                    const count = sectionedTasks[sec] ? sectionedTasks[sec].length : 0;
-                    html += renderSectionHeader(g, sec, count);
-                    if (count > 0) {
-                        html += sectionedTasks[sec].map(renderTodoItem).join('');
-                    }
-                });
-            }
-        });
+        // Grouped sections first (in group order) — but NOT when viewing Ungrouped tab
+        if (groupFilter !== '__none__') {
+            data.groups.forEach(g => {
+                const groupTasks = grouped[g] || [];
+                const sections = data.sections[g] || [];
+                // Show the group if it has tasks OR sections defined
+                if (groupTasks.length || sections.length) {
+                    html += renderGroupHeader(g, groupTasks.length);
+                    // Sub-group by section within this group
+                    const sectionedTasks = {};
+                    const unsectioned = [];
+                    groupTasks.forEach(t => {
+                        if (t.section && sections.includes(t.section)) {
+                            if (!sectionedTasks[t.section]) sectionedTasks[t.section] = [];
+                            sectionedTasks[t.section].push(t);
+                        } else {
+                            unsectioned.push(t);
+                        }
+                    });
+                    // Render unsectioned first
+                    html += unsectioned.map(renderTodoItem).join('');
+                    // Then each section — ALWAYS show, even if empty
+                    sections.forEach(sec => {
+                        const count = sectionedTasks[sec] ? sectionedTasks[sec].length : 0;
+                        html += renderSectionHeader(g, sec, count);
+                        const secKey = g + ':' + sec;
+                        if (count > 0 && !collapsedSections.has(secKey)) {
+                            html += sectionedTasks[sec].map(renderTodoItem).join('');
+                        }
+                    });
+                }
+            });
+        }
         // Ungrouped
         if (ungrouped.length) {
             if (data.groups.length) html += renderGroupHeader('Ungrouped', ungrouped.length, true);
@@ -1672,8 +1663,18 @@ function renderGroupHeader(name, count, ungrouped) {
 }
 
 function renderSectionHeader(groupName, sectionName, count) {
-    return `<div class="section-header" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px;">
-        <span style="color:var(--accent); font-size:9px; font-weight:600; letter-spacing:0.3px; flex-shrink:0;">▸ ${escapeHtml(sectionName)}</span>
+    const key = groupName + ':' + sectionName;
+    const isCollapsed = collapsedSections.has(key);
+    const arrow = isCollapsed ? '▸' : '▾';
+    return `<div class="section-header" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px; cursor:grab;"
+         draggable="true"
+         data-group="${escapeHtml(groupName)}" data-section="${escapeHtml(sectionName)}"
+         ondragstart="onSectionDragStart(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')"
+         ondragover="event.preventDefault(); this.style.borderBottom='2px solid var(--accent)';"
+         ondragleave="this.style.borderBottom='';"
+         ondrop="event.preventDefault(); this.style.borderBottom=''; onSectionOrTaskDrop(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}');">
+        <span style="cursor:pointer; font-size:10px; color:var(--accent);" onclick="toggleSectionCollapse('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')">${arrow}</span>
+        <span style="color:var(--accent); font-size:9px; font-weight:600; letter-spacing:0.3px; flex-shrink:0;">${escapeHtml(sectionName)}</span>
         <span style="color:var(--text-dim); font-size:9px; flex-shrink:0;">${count}</span>
         <div style="flex:1; height:1px; background:var(--border);"></div>
         <button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">✕</button>
@@ -1767,8 +1768,9 @@ function renderTodoItem(t) {
              ondragleave="onTodoDragLeave(event)"
              ondrop="onTodoDrop(event, '${t.id}')"
              ondragend="onTodoDragEnd(event)">
-            <div class="todo-select ${isSelected ? 'selected' : ''}" onclick="toggleSelect('${t.id}')"></div>
-            <div class="todo-check ${t.completed ? 'checked' : ''}" onclick="toggleTodo('${t.id}')"></div>
+            <div class="todo-check ${multiSelectMode ? (isSelected ? 'selected' : '') : (t.completed ? 'checked' : '')}"
+                 onclick="${multiSelectMode ? `toggleSelect('${t.id}')` : `toggleTodo('${t.id}')`}"
+                 title="${multiSelectMode ? 'Select' : 'Mark done'}"></div>
             <div class="todo-body">
                 <div class="todo-text" ondblclick="startEditTodo('${t.id}', this)" title="Double-click to edit">${escapeHtml(t.text)}</div>
                 <div class="todo-meta">
@@ -1813,10 +1815,17 @@ function onTodoDrop(e, targetId) {
     const tgtIdx = data.todos.findIndex(t => t.id === targetId);
     if (srcIdx === -1 || tgtIdx === -1) return;
 
-    // Only allow reordering within the same group (keeps groups intact)
-    if ((data.todos[srcIdx].group || '') !== (data.todos[tgtIdx].group || '')) {
-        // Moving across groups → adopt the target's group
-        data.todos[srcIdx].group = data.todos[tgtIdx].group || '';
+    const src = data.todos[srcIdx];
+    const tgt = data.todos[tgtIdx];
+
+    // Moving across groups → adopt the target's group and clear section
+    if ((src.group || '') !== (tgt.group || '')) {
+        src.group = tgt.group || '';
+        src.section = tgt.section || '';
+    }
+    // Same group but different section → adopt the target's section
+    else if ((src.section || '') !== (tgt.section || '')) {
+        src.section = tgt.section || '';
     }
 
     const [moved] = data.todos.splice(srcIdx, 1);
@@ -1831,6 +1840,58 @@ function onTodoDragEnd(e) {
     e.currentTarget.style.opacity = '';
     document.querySelectorAll('.todo-item').forEach(el => el.style.borderTop = '');
     dragSrcId = null;
+}
+
+// Drop a task onto a section header (moves it into that section)
+function dropOnSection(groupName, sectionName) {
+    if (!dragSrcId) return;
+    const task = data.todos.find(t => t.id === dragSrcId);
+    if (!task) return;
+    task.group = groupName;
+    task.section = sectionName;
+    saveData();
+    renderTodos();
+    dragSrcId = null;
+}
+
+// Toggle collapse/expand a section
+function toggleSectionCollapse(groupName, sectionName) {
+    const key = groupName + ':' + sectionName;
+    if (collapsedSections.has(key)) collapsedSections.delete(key);
+    else collapsedSections.add(key);
+    renderTodos();
+}
+
+// Section reordering via drag
+function onSectionDragStart(e, groupName, sectionName) {
+    dragSectionSrc = { group: groupName, section: sectionName };
+    dragSrcId = null;  // clear task drag
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.4';
+}
+
+// Handles both task-drop-on-section and section-reorder-drop
+function onSectionOrTaskDrop(e, groupName, sectionName) {
+    e.currentTarget.style.borderBottom = '';
+    // Case 1: a task is being dragged onto this section
+    if (dragSrcId) {
+        dropOnSection(groupName, sectionName);
+        return;
+    }
+    // Case 2: a section header is being reordered
+    if (dragSectionSrc && dragSectionSrc.group === groupName && dragSectionSrc.section !== sectionName) {
+        const sections = data.sections[groupName] || [];
+        const fromIdx = sections.indexOf(dragSectionSrc.section);
+        const toIdx = sections.indexOf(sectionName);
+        if (fromIdx !== -1 && toIdx !== -1) {
+            sections.splice(fromIdx, 1);
+            sections.splice(toIdx, 0, dragSectionSrc.section);
+            data.sections[groupName] = sections;
+            saveData();
+            renderTodos();
+        }
+    }
+    dragSectionSrc = null;
 }
 
 // ===== MULTI-SELECT & COPY =====
@@ -2167,7 +2228,9 @@ function fmtLink() {
     const input = document.createElement('input');
     input.id = 'inlineLinkInput';
     input.type = 'text';
-    input.placeholder = 'Paste/type URL, Enter to apply…';
+    input.placeholder = selectedText
+        ? `URL for "${selectedText.substring(0, 20)}${selectedText.length > 20 ? '…' : ''}"…`
+        : 'Paste URL (select text first for hyperlink)…';
     input.className = 'search-input';
     input.style.flex = '1';
     input.style.minWidth = '120px';
