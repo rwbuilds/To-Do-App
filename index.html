@@ -1287,9 +1287,9 @@
 <div class="context-menu" id="contextMenu">
     <div class="context-menu-item" onclick="ctxToggleWip()">🔧 Toggle WIP</div>
     <div class="separator"></div>
-    <div class="context-menu-item" onclick="ctxSetPriority('high')">🔴 High Priority</div>
-    <div class="context-menu-item" onclick="ctxSetPriority('medium')">🟡 Medium Priority</div>
-    <div class="context-menu-item" onclick="ctxSetPriority('low')">🟢 Low Priority</div>
+    <div class="context-menu-item" id="ctxPrioHigh" onclick="ctxSetPriority('high')">🔴 High Priority</div>
+    <div class="context-menu-item" id="ctxPrioMedium" onclick="ctxSetPriority('medium')">🟡 Medium Priority</div>
+    <div class="context-menu-item" id="ctxPrioLow" onclick="ctxSetPriority('low')">🟢 Low Priority</div>
     <div class="separator"></div>
     <div class="context-menu-sub" id="ctxGroupSub">
         <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxGroupMenu()">📁 Move to Group ▸</div>
@@ -1995,6 +1995,7 @@ function renderTodoItem(t) {
              ${rowStyle}
              draggable="${multiSelectMode ? 'false' : 'true'}"
              data-id="${t.id}"
+             onclick="if(event.ctrlKey||event.metaKey){event.preventDefault(); toggleSelect('${t.id}');}"
              oncontextmenu="showContextMenu(event, '${t.id}')"
              ondragstart="onTodoDragStart(event, '${t.id}')"
              ondragover="onTodoDragOver(event, '${t.id}')"
@@ -2794,6 +2795,12 @@ function showContextMenu(e, id) {
     sub.classList.remove('open');
     const todo = data.todos.find(t => t.id === id);
     const currentGroup = todo ? (todo.group || '') : '';
+
+    // Mark the task's current priority as active
+    const prio = todo ? (todo.priority || 'none') : 'none';
+    document.getElementById('ctxPrioHigh').classList.toggle('active', prio === 'high');
+    document.getElementById('ctxPrioMedium').classList.toggle('active', prio === 'medium');
+    document.getElementById('ctxPrioLow').classList.toggle('active', prio === 'low');
     sub.innerHTML = `<div class="context-menu-item ${!currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('')">No Group</div>` +
         data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('${g.replace(/'/g, "\\'")}')">${escapeHtml(g)}</div>`).join('');
 
@@ -2820,7 +2827,12 @@ function hideContextMenu() {
 
 function ctxSetPriority(p) {
     const todo = data.todos.find(t => t.id === contextTargetId);
-    if (todo) { todo.priority = p; saveData(); renderTodos(); }
+    if (todo) {
+        // Reselecting the current priority clears it (toggle off)
+        todo.priority = (todo.priority === p) ? 'none' : p;
+        saveData();
+        renderTodos();
+    }
     hideContextMenu();
 }
 

@@ -119,26 +119,40 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Right-click spelling suggestions for misspelled words in notes
+  // Right-click context menu for editable areas: spelling suggestions + edit actions
   mainWindow.webContents.on('context-menu', (event, params) => {
+    // Only show our menu in editable fields (note body, inputs) or on misspelled words
+    if (!params.isEditable && !params.misspelledWord) return;
+
+    const menu = new Menu();
+
+    // Spelling suggestions first (most prominent) when a misspelled word is right-clicked
     if (params.misspelledWord) {
-      const menu = new Menu();
-      for (const suggestion of params.dictionarySuggestions) {
-        menu.append(new MenuItem({
-          label: suggestion,
-          click: () => mainWindow.webContents.replaceMisspelling(suggestion),
-        }));
+      if (params.dictionarySuggestions.length > 0) {
+        for (const suggestion of params.dictionarySuggestions) {
+          menu.append(new MenuItem({
+            label: suggestion,
+            click: () => mainWindow.webContents.replaceMisspelling(suggestion),
+          }));
+        }
+      } else {
+        menu.append(new MenuItem({ label: 'No spelling suggestions', enabled: false }));
       }
-      if (params.dictionarySuggestions.length === 0) {
-        menu.append(new MenuItem({ label: 'No suggestions', enabled: false }));
-      }
-      menu.append(new MenuItem({ type: 'separator' }));
       menu.append(new MenuItem({
         label: 'Add to dictionary',
         click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
       }));
-      menu.popup();
+      menu.append(new MenuItem({ type: 'separator' }));
     }
+
+    // Standard edit actions
+    menu.append(new MenuItem({ label: 'Cut', role: 'cut', enabled: params.editFlags.canCut }));
+    menu.append(new MenuItem({ label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy }));
+    menu.append(new MenuItem({ label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste }));
+    menu.append(new MenuItem({ type: 'separator' }));
+    menu.append(new MenuItem({ label: 'Select All', role: 'selectAll' }));
+
+    menu.popup();
   });
 
   // Restore saved widget position, or default to top-right
