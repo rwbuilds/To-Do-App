@@ -1181,40 +1181,41 @@
         
         <div class="note-editor" id="noteEditor">
             <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
-            <div class="format-toolbar" id="formatToolbar">
+            <div class="format-toolbar" id="formatToolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:6px 8px; border-bottom:1px solid var(--border);">
                 <!-- Heading dropdown -->
-                <div class="fmt-dd">
-                    <button class="fmt-btn" onclick="event.stopPropagation(); toggleFmtDD('ddHeading')" title="Text style">
+                <div class="fmt-dd" style="position:relative;">
+                    <button class="fmt-btn" style="height:30px; padding:0 9px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:3px;" onclick="event.stopPropagation(); toggleFmtDD('ddHeading')" title="Text style">
                         <span id="ddHeadingLabel">Normal</span> <span style="font-size:8px;">▾</span>
                     </button>
-                    <div class="fmt-dd-menu" id="ddHeading">
+                    <div class="fmt-dd-menu" id="ddHeading" style="display:none; position:absolute; top:110%; left:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,0.4); z-index:1000; flex-direction:column; gap:2px; min-width:140px; white-space:nowrap;">
                         <div class="fmt-dd-item" onclick="fmtBlock('P'); closeFmtDD();">Normal</div>
-                        <div class="fmt-dd-item" onclick="fmtBlock('H1'); closeFmtDD();"><b style="font-size:15px;">Heading 1</b></div>
-                        <div class="fmt-dd-item" onclick="fmtBlock('H2'); closeFmtDD();"><b style="font-size:13px;">Heading 2</b></div>
-                        <div class="fmt-dd-item" onclick="fmtBlock('H3'); closeFmtDD();"><b>Heading 3</b></div>
+                        <div class="fmt-dd-item" onclick="fmtBlock('H1'); closeFmtDD();" style="font-weight:700; font-size:15px;">Heading 1</div>
+                        <div class="fmt-dd-item" onclick="fmtBlock('H2'); closeFmtDD();" style="font-weight:700; font-size:13px;">Heading 2</div>
+                        <div class="fmt-dd-item" onclick="fmtBlock('H3'); closeFmtDD();" style="font-weight:700;">Heading 3</div>
                     </div>
                 </div>
                 <!-- List dropdown -->
-                <div class="fmt-dd">
-                    <button class="fmt-btn" onclick="event.stopPropagation(); toggleFmtDD('ddList')" title="Lists">
+                <div class="fmt-dd" style="position:relative;">
+                    <button class="fmt-btn" style="height:30px; padding:0 9px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:3px;" onclick="event.stopPropagation(); toggleFmtDD('ddList')" title="Lists">
                         ☰ <span style="font-size:8px;">▾</span>
                     </button>
-                    <div class="fmt-dd-menu" id="ddList">
+                    <div class="fmt-dd-menu" id="ddList" style="display:none; position:absolute; top:110%; left:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,0.4); z-index:1000; flex-direction:column; gap:2px; min-width:140px; white-space:nowrap;">
                         <div class="fmt-dd-item" onclick="fmtCmd('insertUnorderedList'); closeFmtDD();">• Bullet list</div>
                         <div class="fmt-dd-item" onclick="fmtCmd('insertOrderedList'); closeFmtDD();">1. Numbered list</div>
                     </div>
                 </div>
-                <span class="fmt-sep"></span>
-                <button class="fmt-btn" data-cmd="bold" onclick="fmtCmd('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
-                <button class="fmt-btn" data-cmd="italic" onclick="fmtCmd('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
-                <button class="fmt-btn" data-cmd="strikeThrough" onclick="fmtCmd('strikeThrough')" title="Strikethrough"><s>S</s></button>
-                <button class="fmt-btn" onclick="fmtLink()" title="Insert link">🔗</button>
+                <span style="width:1px; height:20px; background:var(--border); margin:0 5px;"></span>
+                <button class="fmt-btn" data-cmd="bold" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtCmd('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
+                <button class="fmt-btn" data-cmd="italic" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtCmd('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
+                <button class="fmt-btn" data-cmd="strikeThrough" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtCmd('strikeThrough')" title="Strikethrough"><s>S</s></button>
+                <button class="fmt-btn" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtLink()" title="Insert link">🔗</button>
                 <!-- More menu -->
-                <div class="fmt-dd">
-                    <button class="fmt-btn" onclick="event.stopPropagation(); toggleFmtDD('ddMore')" title="More">⋯</button>
-                    <div class="fmt-dd-menu" id="ddMore" style="right:0; left:auto;">
+                <div class="fmt-dd" style="position:relative;">
+                    <button class="fmt-btn" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="event.stopPropagation(); toggleFmtDD('ddMore')" title="More">⋯</button>
+                    <div class="fmt-dd-menu" id="ddMore" style="display:none; position:absolute; top:110%; right:0; left:auto; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,0.4); z-index:1000; flex-direction:column; gap:2px; min-width:160px; white-space:nowrap;">
                         <div class="fmt-dd-item" data-cmd="underline" onclick="fmtCmd('underline'); closeFmtDD();"><u>Underline</u></div>
-                        <div class="fmt-dd-item" onclick="insertTable(); closeFmtDD();">▦ Insert table</div>
+                        <div class="fmt-dd-item" onclick="event.stopPropagation(); openTablePicker()">▦ Insert table ▸</div>
+                        <div id="tablePicker" style="display:none; padding:6px;"></div>
                         <div class="fmt-dd-item" onclick="fmtCmd('removeFormat'); closeFmtDD();">⌫ Clear formatting</div>
                     </div>
                 </div>
@@ -2475,13 +2476,15 @@ function fmtBlock(tag) {
 // ===== TOOLBAR DROPDOWNS =====
 function toggleFmtDD(id) {
     const menu = document.getElementById(id);
-    const wasOpen = menu.classList.contains('open');
+    const wasOpen = menu.style.display === 'flex';
     closeFmtDD();
-    if (!wasOpen) menu.classList.add('open');
+    if (!wasOpen) menu.style.display = 'flex';
 }
 
 function closeFmtDD() {
-    document.querySelectorAll('.fmt-dd-menu').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.fmt-dd-menu').forEach(m => m.style.display = 'none');
+    const tp = document.getElementById('tablePicker');
+    if (tp) tp.style.display = 'none';
 }
 
 // Close dropdowns when clicking elsewhere
@@ -2489,20 +2492,50 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('.fmt-dd')) closeFmtDD();
 });
 
-// Insert a table into the note
-function insertTable() {
+// ===== TABLE SIZE PICKER =====
+function openTablePicker() {
+    const tp = document.getElementById('tablePicker');
+    if (!tp) return;
+    if (tp.style.display === 'block') { tp.style.display = 'none'; return; }
+    // Build a 6x6 hover grid
+    let html = '<div style="font-size:11px; color:var(--text-dim); margin-bottom:4px;" id="tableSizeLabel">Pick size</div><div style="display:grid; grid-template-columns:repeat(6,16px); gap:2px;">';
+    for (let r = 1; r <= 6; r++) {
+        for (let c = 1; c <= 6; c++) {
+            html += `<div class="tbl-cell" data-r="${r}" data-c="${c}"
+                onmouseover="highlightTable(${r},${c})"
+                onclick="event.stopPropagation(); insertTable(${r},${c})"
+                style="width:16px; height:16px; border:1px solid var(--border); border-radius:2px; cursor:pointer;"></div>`;
+        }
+    }
+    html += '</div>';
+    tp.innerHTML = html;
+    tp.style.display = 'block';
+}
+
+function highlightTable(rows, cols) {
+    const label = document.getElementById('tableSizeLabel');
+    if (label) label.textContent = `${cols} × ${rows}`;
+    document.querySelectorAll('#tablePicker .tbl-cell').forEach(cell => {
+        const r = +cell.dataset.r, c = +cell.dataset.c;
+        cell.style.background = (r <= rows && c <= cols) ? 'var(--accent)' : 'transparent';
+    });
+}
+
+// Insert a table of the given size
+function insertTable(rows, cols) {
+    rows = rows || 2; cols = cols || 2;
     focusBody();
-    const rows = 2, cols = 2;
-    let tableHtml = '<table class="note-table" border="1" style="border-collapse:collapse; width:100%; margin:8px 0;">';
+    let tableHtml = '<table class="note-table" style="border-collapse:collapse; width:100%; margin:8px 0;">';
     for (let r = 0; r < rows; r++) {
         tableHtml += '<tr>';
         for (let c = 0; c < cols; c++) {
-            tableHtml += '<td style="border:1px solid var(--border); padding:6px; min-width:40px;">&nbsp;</td>';
+            tableHtml += '<td style="border:1px solid var(--border); padding:6px; min-width:30px;">&nbsp;</td>';
         }
         tableHtml += '</tr>';
     }
     tableHtml += '</table><p><br></p>';
     document.execCommand('insertHTML', false, tableHtml);
+    closeFmtDD();
     saveCurrentNote();
 }
 
