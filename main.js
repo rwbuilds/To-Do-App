@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, Tray, Menu, MenuItem, ipcMain, nativeImage, screen, globalShortcut, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -8,6 +8,41 @@ let alwaysOnTop = true;
 let isExpanded = false;   // explicit expanded/widget state for reliable blur handling
 let isEditingNote = false; // renderer tells us when a note editor is open
 let suppressCollapse = false; // set briefly during file dialogs / link opens
+
+// ===== DUE REMINDERS =====
+let remindersEnabled = false;
+let reminderTasks = [];          // [{ id, text, dueDate, completed }]
+const notifiedTaskIds = new Set();
+let reminderTimer = null;
+
+function checkReminders() {
+  if (!remindersEnabled) return;
+  const now = new Date();
+  // Only notify from 9 AM onward on the due day (or immediately if overdue)
+  reminderTasks.forEach(t => {
+    if (!t.dueDate || t.completed) return;
+    if (notifiedTaskIds.has(t.id)) return;
+    const due = new Date(t.dueDate + 'T09:00:00');
+    if (now >= due) {
+      notifiedTaskIds.add(t.id);
+      try {
+        const n = new Notification({
+          title: 'Jot — Task due',
+          body: t.text,
+          silent: false,
+        });
+        n.on('click', () => { showWindow(); if (mainWindow) mainWindow.webContents.send('focus-task', t.id); });
+        n.show();
+      } catch (e) { /* notifications unsupported */ }
+    }
+  });
+}
+
+function startReminderTimer() {
+  if (reminderTimer) clearInterval(reminderTimer);
+  reminderTimer = setInterval(checkReminders, 60 * 1000); // every minute
+  checkReminders(); // run once now
+}
 
 // ===== SETTINGS PERSISTENCE =====
 // Stored in the OS user-data folder so it survives reinstalls.
@@ -74,6 +109,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: true,
     },
   });
 
@@ -82,6 +118,28 @@ function createWindow() {
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   mainWindow.loadFile('index.html');
+
+  // Right-click spelling suggestions for misspelled words in notes
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    if (params.misspelledWord) {
+      const menu = new Menu();
+      for (const suggestion of params.dictionarySuggestions) {
+        menu.append(new MenuItem({
+          label: suggestion,
+          click: () => mainWindow.webContents.replaceMisspelling(suggestion),
+        }));
+      }
+      if (params.dictionarySuggestions.length === 0) {
+        menu.append(new MenuItem({ label: 'No suggestions', enabled: false }));
+      }
+      menu.append(new MenuItem({ type: 'separator' }));
+      menu.append(new MenuItem({
+        label: 'Add to dictionary',
+        click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+      }));
+      menu.popup();
+    }
+  });
 
   // Restore saved widget position, or default to top-right
   if (settings.widgetX != null && settings.widgetY != null) {
@@ -335,6 +393,23 @@ ipcMain.on('set-editing', (event, editing) => {
 ipcMain.on('suppress-collapse', () => {
   suppressCollapse = true;
   setTimeout(() => { suppressCollapse = false; }, 1500);
+});
+
+// Reminders: renderer syncs the current task list with due dates
+ipcMain.on('sync-reminders', (event, tasks) => {
+  reminderTasks = Array.isArray(tasks) ? tasks : [];
+  // Drop notified IDs that no longer exist or are completed (so re-adding re-notifies)
+  const validIds = new Set(reminderTasks.filter(t => !t.completed).map(t => t.id));
+  for (const id of [...notifiedTaskIds]) {
+    if (!validIds.has(id)) notifiedTaskIds.delete(id);
+  }
+  checkReminders();
+});
+
+ipcMain.on('set-reminders', (event, enabled) => {
+  remindersEnabled = !!enabled;
+  if (remindersEnabled) startReminderTimer();
+  else if (reminderTimer) { clearInterval(reminderTimer); reminderTimer = null; }
 });
 
 // ===== APP LIFECYCLE =====

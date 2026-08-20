@@ -222,6 +222,76 @@
 
         .tab:hover { color: var(--text); background: var(--surface); }
         .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--surface); }
+        .settings-tab { font-size: 16px; padding: 6px 12px; }
+
+        /* Settings panel */
+        .settings-panel {
+            display: none;
+            flex-direction: column;
+            padding: 16px;
+            gap: 16px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .settings-panel.active { display: flex; }
+        .settings-section h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        .theme-swatch {
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.15s;
+        }
+        .theme-swatch:hover { border-color: var(--text-dim); }
+        .theme-swatch.active { border-color: var(--accent); }
+        .theme-preview {
+            width: 100%;
+            height: 36px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .theme-preview .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .theme-name { font-size: 11px; color: var(--text); }
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--surface);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+        .settings-row .label { font-size: 13px; color: var(--text); }
+        .settings-row .sublabel { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+        .toggle-switch {
+            width: 40px; height: 22px; border-radius: 11px;
+            background: var(--border); cursor: pointer; position: relative;
+            transition: background 0.2s; flex-shrink: 0;
+        }
+        .toggle-switch.on { background: var(--accent); }
+        .toggle-switch::after {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 18px; height: 18px; border-radius: 50%; background: #fff;
+            transition: transform 0.2s;
+        }
+        .toggle-switch.on::after { transform: translateX(18px); }
 
         /* Search/Filter bar */
         .toolbar {
@@ -742,12 +812,12 @@
         .note-preview-pane a { color: var(--accent); }
         .note-preview-pane .md-check { margin-right: 6px; }
 
-        /* Formatting toolbar */
+        /* Formatting toolbar — Notepad style */
         .format-toolbar {
             display: flex;
             align-items: center;
-            gap: 3px;
-            padding: 8px 10px;
+            gap: 2px;
+            padding: 6px 8px;
             border-bottom: 1px solid var(--border);
             flex-wrap: wrap;
         }
@@ -756,23 +826,51 @@
             height: 30px;
             padding: 0 9px;
             border: none;
-            border-radius: 7px;
-            background: var(--surface);
-            color: var(--text-dim);
-            font-size: 12.5px;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text);
+            font-size: 13px;
             cursor: pointer;
             transition: all 0.12s;
             display: flex;
             align-items: center;
+            gap: 3px;
             justify-content: center;
         }
-        .fmt-btn:hover { background: var(--surface-hover); color: var(--text); }
+        .fmt-btn:hover { background: var(--surface-hover); }
         .fmt-btn:active { transform: scale(0.94); }
         .fmt-btn.active {
-            background: var(--accent);
-            color: #fff;
+            color: var(--accent);   /* app purple */
         }
-        .fmt-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+        .fmt-sep { width: 1px; height: 20px; background: var(--border); margin: 0 5px; }
+
+        /* Toolbar dropdowns */
+        .fmt-dd { position: relative; }
+        .fmt-dd-menu {
+            position: absolute;
+            top: 110%;
+            left: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 5px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 140px;
+            white-space: nowrap;
+        }
+        .fmt-dd-menu.open { display: flex; }
+        .fmt-dd-item {
+            padding: 7px 12px;
+            font-size: 12px;
+            border-radius: 6px;
+            color: var(--text);
+            cursor: pointer;
+        }
+        .fmt-dd-item:hover { background: var(--surface-hover); }
 
         /* Group bar */
         .group-bar {
@@ -1000,6 +1098,8 @@
     <div class="tabs">
         <button class="tab active" data-tab="todos" onclick="switchTab('todos')">Tasks</button>
         <button class="tab" data-tab="notes" onclick="switchTab('notes')">Notes</button>
+        <div style="flex:1;"></div>
+        <button class="tab settings-tab" onclick="openSettings()" title="Settings">⚙</button>
     </div>
 
     <!-- TODOS TAB -->
@@ -1080,21 +1180,45 @@
         <div class="note-editor" id="noteEditor">
             <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
             <div class="format-toolbar" id="formatToolbar">
-                <button class="fmt-btn" data-cmd="formatBlock:H1" onclick="fmtBlock('H1')" title="Heading 1"><b>H1</b></button>
-                <button class="fmt-btn" data-cmd="formatBlock:H2" onclick="fmtBlock('H2')" title="Heading 2"><b>H2</b></button>
+                <!-- Heading dropdown -->
+                <div class="fmt-dd">
+                    <button class="fmt-btn" onclick="event.stopPropagation(); toggleFmtDD('ddHeading')" title="Text style">
+                        <span id="ddHeadingLabel">Normal</span> <span style="font-size:8px;">▾</span>
+                    </button>
+                    <div class="fmt-dd-menu" id="ddHeading">
+                        <div class="fmt-dd-item" onclick="fmtBlock('P'); closeFmtDD();">Normal</div>
+                        <div class="fmt-dd-item" onclick="fmtBlock('H1'); closeFmtDD();"><b style="font-size:15px;">Heading 1</b></div>
+                        <div class="fmt-dd-item" onclick="fmtBlock('H2'); closeFmtDD();"><b style="font-size:13px;">Heading 2</b></div>
+                        <div class="fmt-dd-item" onclick="fmtBlock('H3'); closeFmtDD();"><b>Heading 3</b></div>
+                    </div>
+                </div>
+                <!-- List dropdown -->
+                <div class="fmt-dd">
+                    <button class="fmt-btn" onclick="event.stopPropagation(); toggleFmtDD('ddList')" title="Lists">
+                        ☰ <span style="font-size:8px;">▾</span>
+                    </button>
+                    <div class="fmt-dd-menu" id="ddList">
+                        <div class="fmt-dd-item" onclick="fmtCmd('insertUnorderedList'); closeFmtDD();">• Bullet list</div>
+                        <div class="fmt-dd-item" onclick="fmtCmd('insertOrderedList'); closeFmtDD();">1. Numbered list</div>
+                    </div>
+                </div>
                 <span class="fmt-sep"></span>
                 <button class="fmt-btn" data-cmd="bold" onclick="fmtCmd('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
                 <button class="fmt-btn" data-cmd="italic" onclick="fmtCmd('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
-                <button class="fmt-btn" data-cmd="underline" onclick="fmtCmd('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
                 <button class="fmt-btn" data-cmd="strikeThrough" onclick="fmtCmd('strikeThrough')" title="Strikethrough"><s>S</s></button>
-                <span class="fmt-sep"></span>
-                <button class="fmt-btn" data-cmd="insertUnorderedList" onclick="fmtCmd('insertUnorderedList')" title="Bullet list">• List</button>
-                <button class="fmt-btn" data-cmd="insertOrderedList" onclick="fmtCmd('insertOrderedList')" title="Numbered list">1. List</button>
-                <span class="fmt-sep"></span>
                 <button class="fmt-btn" onclick="fmtLink()" title="Insert link">🔗</button>
-                <button class="fmt-btn" onclick="fmtCmd('removeFormat')" title="Clear formatting">⌫</button>
+                <!-- More menu -->
+                <div class="fmt-dd">
+                    <button class="fmt-btn" onclick="event.stopPropagation(); toggleFmtDD('ddMore')" title="More">⋯</button>
+                    <div class="fmt-dd-menu" id="ddMore" style="right:0; left:auto;">
+                        <div class="fmt-dd-item" data-cmd="underline" onclick="fmtCmd('underline'); closeFmtDD();"><u>Underline</u></div>
+                        <div class="fmt-dd-item" onclick="insertTable(); closeFmtDD();">▦ Insert table</div>
+                        <div class="fmt-dd-item" onclick="fmtCmd('removeFormat'); closeFmtDD();">⌫ Clear formatting</div>
+                    </div>
+                </div>
             </div>
             <div class="note-editor-body" id="noteBody" contenteditable="true"
+                 spellcheck="true"
                  data-placeholder="Start writing..."
                  oninput="onNoteInput()"
                  onkeyup="updateToolbarState()"
@@ -1105,6 +1229,47 @@
                 <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 words</span>
                 <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
             </div>
+        </div>
+    </div>
+
+    <!-- SETTINGS PANEL -->
+    <div id="settingsPanel" class="settings-panel">
+        <div class="settings-section">
+            <h3>Theme</h3>
+            <div class="theme-grid" id="themeGrid"></div>
+            <div class="settings-row" style="margin-top:10px;">
+                <div>
+                    <div class="label">Custom accent color</div>
+                    <div class="sublabel">Pick any color for buttons & highlights</div>
+                </div>
+                <input type="color" id="customAccent" value="#7c5cfc" onchange="setCustomAccent(this.value)" style="width:40px; height:30px; border:none; background:none; cursor:pointer;">
+            </div>
+        </div>
+        <div class="settings-section">
+            <h3>General</h3>
+            <div class="settings-row">
+                <div>
+                    <div class="label">Launch at startup</div>
+                    <div class="sublabel">Open Jot automatically when Windows starts</div>
+                </div>
+                <div class="toggle-switch" id="startupToggle" onclick="toggleStartupSetting()"></div>
+            </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
+                    <div class="label">Due reminders</div>
+                    <div class="sublabel">Desktop notification at 9 AM on a task's due day</div>
+                </div>
+                <div class="toggle-switch" id="remindersToggle" onclick="toggleRemindersSetting()"></div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h3>Data</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="filter-btn" onclick="exportData()">⤓ Backup to file</button>
+                <button class="filter-btn" onclick="document.getElementById('importFile').click()">⤒ Restore from file</button>
+                <button class="filter-btn delete-selected-btn" onclick="resetAllData()">↺ Reset to defaults</button>
+            </div>
+            <div class="sublabel" style="margin-top:8px;">Backups include all tasks, notes, groups, sections & settings.</div>
         </div>
     </div>
 </div>
@@ -1159,15 +1324,26 @@ function loadData() {
             const d = JSON.parse(saved);
             if (!d.groups) d.groups = [];
             if (!d.sections) d.sections = {};  // { groupName: [section1, section2, ...] }
+            if (!d.settings) d.settings = { theme: 'purple' };
             return d;
         }
     } catch(e) {}
-    return { todos: [], notes: [], groups: [], sections: {} };
+    return { todos: [], notes: [], groups: [], sections: {}, settings: { theme: 'purple' } };
 }
 
 function saveData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     updateBadge();
+    syncReminders();
+}
+
+// Send tasks with due dates to the main process for reminder scheduling
+function syncReminders() {
+    if (!window.widgetAPI || !window.widgetAPI.syncReminders) return;
+    const due = data.todos
+        .filter(t => t.dueDate && !t.completed)
+        .map(t => ({ id: t.id, text: t.text, dueDate: t.dueDate, completed: t.completed }));
+    window.widgetAPI.syncReminders(due);
 }
 
 // ===== BACKUP / RESTORE =====
@@ -1320,6 +1496,9 @@ function switchTab(tab) {
     if (tab !== 'notes' && editingNoteId) {
         closeNoteEditor();
     }
+    // Hide settings panel when switching tabs
+    document.getElementById('settingsPanel').classList.remove('active');
+    document.querySelector('.settings-tab').classList.remove('active');
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     const todosEl = document.getElementById('tab-todos');
     const notesEl = document.getElementById('tab-notes');
@@ -1628,6 +1807,8 @@ function renderTodos() {
         // Grouped sections first (in group order) — but NOT when viewing Ungrouped tab
         if (groupFilter !== '__none__') {
             data.groups.forEach(g => {
+                // When a specific group tab is active, only render that group
+                if (groupFilter !== 'all' && g !== groupFilter) return;
                 const groupTasks = grouped[g] || [];
                 const sections = data.sections[g] || [];
                 // Show the group if it has tasks OR sections defined
@@ -1664,6 +1845,20 @@ function renderTodos() {
             html += ungrouped.map(renderTodoItem).join('');
         }
         container.innerHTML = html;
+    }
+
+    // Global search hint: show matching notes count
+    if (search) {
+        const noteMatches = data.notes.filter(n =>
+            (n.title || '').toLowerCase().includes(search) || (n.body || '').toLowerCase().includes(search)
+        ).length;
+        if (noteMatches > 0) {
+            const hint = document.createElement('div');
+            hint.style.cssText = 'padding:8px 12px; margin:4px 0; font-size:12px; color:var(--accent); cursor:pointer; text-align:center;';
+            hint.innerHTML = `🔍 ${noteMatches} matching note${noteMatches > 1 ? 's' : ''} → View in Notes`;
+            hint.onclick = () => { const q = document.getElementById('searchTodos').value; switchTab('notes'); document.getElementById('searchNotes').value = q; renderNotes(); };
+            container.appendChild(hint);
+        }
     }
 
     // Stats
@@ -1785,10 +1980,16 @@ function renderTodoItem(t) {
     const priorityClass = t.priority !== 'none' && t.priority ? `priority-${t.priority}` : '';
     const isOverdue = t.dueDate && !t.completed && new Date(t.dueDate) < new Date();
     const isSelected = selectedIds.has(t.id);
-    const wipStyle = t.wip ? 'style="background:rgba(251,146,60,0.18); border-color:rgba(251,146,60,0.55);"' : '';
+    // Selected state takes visual priority; otherwise show WIP orange
+    let rowStyle = '';
+    if (isSelected) {
+        rowStyle = 'style="background:rgba(124,92,252,0.22); border-color:var(--accent); box-shadow:inset 3px 0 0 var(--accent);"';
+    } else if (t.wip) {
+        rowStyle = 'style="background:rgba(251,146,60,0.18); border-color:rgba(251,146,60,0.55);"';
+    }
     return `
         <div class="todo-item ${t.completed ? 'completed' : ''} ${t.wip ? 'wip' : ''} ${priorityClass} ${isSelected ? 'is-selected' : ''}"
-             ${wipStyle}
+             ${rowStyle}
              draggable="${multiSelectMode ? 'false' : 'true'}"
              data-id="${t.id}"
              oncontextmenu="showContextMenu(event, '${t.id}')"
@@ -2269,6 +2470,40 @@ function fmtBlock(tag) {
     updateToolbarState();
 }
 
+// ===== TOOLBAR DROPDOWNS =====
+function toggleFmtDD(id) {
+    const menu = document.getElementById(id);
+    const wasOpen = menu.classList.contains('open');
+    closeFmtDD();
+    if (!wasOpen) menu.classList.add('open');
+}
+
+function closeFmtDD() {
+    document.querySelectorAll('.fmt-dd-menu').forEach(m => m.classList.remove('open'));
+}
+
+// Close dropdowns when clicking elsewhere
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.fmt-dd')) closeFmtDD();
+});
+
+// Insert a table into the note
+function insertTable() {
+    focusBody();
+    const rows = 2, cols = 2;
+    let tableHtml = '<table class="note-table" border="1" style="border-collapse:collapse; width:100%; margin:8px 0;">';
+    for (let r = 0; r < rows; r++) {
+        tableHtml += '<tr>';
+        for (let c = 0; c < cols; c++) {
+            tableHtml += '<td style="border:1px solid var(--border); padding:6px; min-width:40px;">&nbsp;</td>';
+        }
+        tableHtml += '</tr>';
+    }
+    tableHtml += '</table><p><br></p>';
+    document.execCommand('insertHTML', false, tableHtml);
+    saveCurrentNote();
+}
+
 // Insert a clickable hyperlink (Electron doesn't support window.prompt)
 function fmtLink() {
     const bodyEl = document.getElementById('noteBody');
@@ -2418,6 +2653,13 @@ function updateToolbarState() {
         }
         btn.classList.toggle('active', on);
     });
+
+    // Update the heading dropdown label
+    const hLabel = document.getElementById('ddHeadingLabel');
+    if (hLabel) {
+        const map = { 'H1': 'Heading 1', 'H2': 'Heading 2', 'H3': 'Heading 3' };
+        hLabel.textContent = map[block] || 'Normal';
+    }
 }
 
 function queryState(cmd) {
@@ -2452,6 +2694,20 @@ function renderNotes() {
                 </div>
             </div>
         `).join('');
+    }
+
+    // Global search hint: show matching tasks count
+    if (search) {
+        const taskMatches = data.todos.filter(t =>
+            (t.text || '').toLowerCase().includes(search) || (t.tags || []).some(tag => tag.includes(search))
+        ).length;
+        if (taskMatches > 0) {
+            const hint = document.createElement('div');
+            hint.style.cssText = 'padding:8px 12px; margin:4px 0; font-size:12px; color:var(--accent); cursor:pointer; text-align:center;';
+            hint.innerHTML = `🔍 ${taskMatches} matching task${taskMatches > 1 ? 's' : ''} → View in Tasks`;
+            hint.onclick = () => { const q = document.getElementById('searchNotes').value; switchTab('todos'); document.getElementById('searchTodos').value = q; renderTodos(); };
+            container.appendChild(hint);
+        }
     }
 }
 
@@ -2746,6 +3002,139 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// ===== THEMES & SETTINGS =====
+const THEMES = {
+    purple: { name: 'Purple',  accent: '#7c5cfc', accentHover: '#9070ff', bg: '#1e1e2e', surface: '#2a2a3c', surfaceHover: '#33334a', border: '#3a3a52', widget: '#7c5cfc' },
+    blue:   { name: 'Ocean',   accent: '#38bdf8', accentHover: '#5ccbfa', bg: '#0f1e2e', surface: '#16293c', surfaceHover: '#1f3448', border: '#274056', widget: '#38bdf8' },
+    green:  { name: 'Forest',  accent: '#4ade80', accentHover: '#6ee79a', bg: '#0f1f16', surface: '#162b20', surfaceHover: '#1d3729', border: '#264d38', widget: '#4ade80' },
+    orange: { name: 'Amber',   accent: '#fb923c', accentHover: '#fda865', bg: '#241a12', surface: '#31261b', surfaceHover: '#3d2f22', border: '#503d2b', widget: '#fb923c' },
+    pink:   { name: 'Rose',    accent: '#f472b6', accentHover: '#f78fc6', bg: '#241520', surface: '#31202b', surfaceHover: '#3d2836', border: '#50354a', widget: '#f472b6' },
+    slate:  { name: 'Slate',   accent: '#94a3b8', accentHover: '#aab5c6', bg: '#1a1d23', surface: '#252932', surfaceHover: '#2f343f', border: '#3a4150', widget: '#64748b' },
+    light:  { name: 'Light',   accent: '#7c5cfc', accentHover: '#6b4ce0', bg: '#f4f4f8', surface: '#ffffff', surfaceHover: '#ececf2', border: '#d8d8e2', widget: '#7c5cfc', text: '#1e1e2e', textDim: '#6b6b80' },
+};
+
+function applyTheme(themeKey) {
+    const t = THEMES[themeKey] || THEMES.purple;
+    const root = document.documentElement.style;
+    root.setProperty('--accent', t.accent);
+    root.setProperty('--accent-hover', t.accentHover);
+    root.setProperty('--bg-primary', t.bg);
+    root.setProperty('--bg', t.bg);
+    root.setProperty('--surface', t.surface);
+    root.setProperty('--surface-hover', t.surfaceHover);
+    root.setProperty('--border', t.border);
+    root.setProperty('--text', t.text || '#e2e2f0');
+    root.setProperty('--text-dim', t.textDim || '#8888a8');
+    // Widget color
+    root.setProperty('--widget-color', t.widget);
+    const widget = document.getElementById('widget');
+    if (widget) widget.style.background = t.widget;
+}
+
+function openSettings() {
+    // Hide task/notes panels, show settings
+    document.getElementById('tab-todos').classList.add('tab-hidden');
+    document.getElementById('tab-notes').classList.add('tab-hidden');
+    document.getElementById('tab-todos').style.display = 'none';
+    document.getElementById('tab-notes').style.display = 'none';
+    document.getElementById('settingsPanel').classList.add('active');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.settings-tab').classList.add('active');
+    renderSettings();
+}
+
+function renderSettings() {
+    // Theme swatches
+    const grid = document.getElementById('themeGrid');
+    const current = (data.settings && data.settings.theme) || 'purple';
+    grid.innerHTML = Object.entries(THEMES).map(([key, t]) => `
+        <div class="theme-swatch ${key === current ? 'active' : ''}" onclick="setTheme('${key}')">
+            <div class="theme-preview" style="background:${t.bg};">
+                <div class="dot" style="background:${t.accent};"></div>
+            </div>
+            <div class="theme-name">${t.name}</div>
+        </div>
+    `).join('');
+
+    // Startup toggle
+    if (window.widgetAPI && window.widgetAPI.getAutoLaunch) {
+        window.widgetAPI.getAutoLaunch().then(enabled => {
+            document.getElementById('startupToggle').classList.toggle('on', enabled);
+        });
+    }
+
+    // Reminders toggle
+    document.getElementById('remindersToggle').classList.toggle('on', !!(data.settings && data.settings.reminders));
+
+    // Custom accent color input
+    const customInput = document.getElementById('customAccent');
+    if (customInput && data.settings && data.settings.customAccent) {
+        customInput.value = data.settings.customAccent;
+    }
+}
+
+function setTheme(key) {
+    data.settings.theme = key;
+    saveData();
+    applyTheme(key);
+    renderSettings();
+}
+
+function toggleStartupSetting() {
+    const toggle = document.getElementById('startupToggle');
+    const willEnable = !toggle.classList.contains('on');
+    toggle.classList.toggle('on', willEnable);
+    if (window.widgetAPI && window.widgetAPI.setAutoLaunch) {
+        window.widgetAPI.setAutoLaunch(willEnable);
+    }
+}
+
+// Custom accent color (overrides theme accent)
+function setCustomAccent(color) {
+    data.settings.customAccent = color;
+    data.settings.theme = 'custom';
+    saveData();
+    applyCustomAccent(color);
+    renderSettings();
+}
+
+function applyCustomAccent(color) {
+    const root = document.documentElement.style;
+    root.setProperty('--accent', color);
+    root.setProperty('--accent-hover', color);
+    root.setProperty('--widget-color', color);
+    const widget = document.getElementById('widget');
+    if (widget) widget.style.background = color;
+}
+
+// Reset everything to defaults (with confirmation)
+function resetAllData() {
+    if (!confirm('Reset Jot to defaults? This permanently deletes ALL tasks, notes, groups, and sections. Consider backing up first.')) return;
+    data = { todos: [], notes: [], groups: [], sections: {}, settings: { theme: 'purple' } };
+    selectedIds.clear();
+    collapsedSections.clear();
+    saveData();
+    applyTheme('purple');
+    refreshGroupSelectors();
+    refreshSectionSelect();
+    renderTodos();
+    renderNotes();
+    renderSettings();
+    showToast('Reset to defaults', null);
+}
+
+// Due reminders toggle
+function toggleRemindersSetting() {
+    const toggle = document.getElementById('remindersToggle');
+    const willEnable = !toggle.classList.contains('on');
+    toggle.classList.toggle('on', willEnable);
+    data.settings.reminders = willEnable;
+    saveData();
+    if (window.widgetAPI && window.widgetAPI.setReminders) {
+        window.widgetAPI.setReminders(willEnable);
+    }
+}
+
 // ===== RENDER ALL =====
 function renderAll() {
     refreshGroupSelectors();
@@ -2757,6 +3146,10 @@ function renderAll() {
 }
 
 // ===== INIT =====
+applyTheme((data.settings && data.settings.theme) || 'purple');
+if (data.settings && data.settings.theme === 'custom' && data.settings.customAccent) {
+    applyCustomAccent(data.settings.customAccent);
+}
 refreshGroupSelectors();
 refreshSectionSelect();
 updateBadge();
@@ -2836,12 +3229,7 @@ if (window.widgetAPI) {
     window.widgetAPI.resizeWindow('widget');
 
     // Show + sync the "launch at startup" toggle
-    const alBtn = document.getElementById('autoLaunchBtn');
-    alBtn.style.display = '';
-    window.widgetAPI.getAutoLaunch().then(enabled => {
-        alBtn.style.opacity = enabled ? '1' : '0.4';
-        alBtn.title = enabled ? 'Launch at startup: ON' : 'Launch at startup: OFF';
-    });
+    // Startup toggle now lives in the Settings panel (titlebar button hidden)
 
     // Daily auto-backup — main process only writes once per day
     try {
@@ -2861,6 +3249,26 @@ if (window.widgetAPI) {
     if (window.widgetAPI.onForceWidgetUI) {
         window.widgetAPI.onForceWidgetUI(() => {
             collapseUIOnly();
+        });
+    }
+
+    // Reminders: enable if saved, and do an initial sync
+    if (window.widgetAPI.setReminders) {
+        window.widgetAPI.setReminders(!!(data.settings && data.settings.reminders));
+    }
+    syncReminders();
+
+    // Clicking a reminder notification focuses that task
+    if (window.widgetAPI.onFocusTask) {
+        window.widgetAPI.onFocusTask((id) => {
+            expandApp();
+            switchTab('todos');
+            setFilter('all');
+            // brief highlight
+            setTimeout(() => {
+                const el = document.querySelector(`.todo-item[data-id="${id}"]`);
+                if (el) { el.scrollIntoView({ block: 'center' }); el.style.outline = '2px solid var(--accent)'; setTimeout(()=>el.style.outline='', 2000); }
+            }, 200);
         });
     }
 }

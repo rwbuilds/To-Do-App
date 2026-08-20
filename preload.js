@@ -17,5 +17,8 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   onForceWidgetUI: (cb) => ipcRenderer.on('force-widget-ui', cb),
   setEditing: (editing) => ipcRenderer.send('set-editing', editing),
   suppressCollapse: () => ipcRenderer.send('suppress-collapse'),
+  syncReminders: (tasks) => ipcRenderer.send('sync-reminders', tasks),
+  setReminders: (enabled) => ipcRenderer.send('set-reminders', enabled),
+  onFocusTask: (cb) => ipcRenderer.on('focus-task', (e, id) => cb(id)),
   openExternal: (url) => ipcRenderer.send('open-external', url),
 });
