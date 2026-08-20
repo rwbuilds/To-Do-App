@@ -701,7 +701,6 @@
 
         /* Context menu */
         .context-menu {
-        .context-menu {
             position: fixed;
             background: var(--surface);
             border: 1px solid var(--border);
@@ -724,6 +723,7 @@
             gap: 8px;
             transition: background 0.1s;
         }
+        .context-menu-item, .context-sub-menu .context-menu-item { color: var(--text); }
 
         .context-menu-item:hover { background: var(--surface-hover); }
         .context-menu-item.danger { color: var(--danger); }
@@ -867,10 +867,12 @@
             padding: 7px 12px;
             font-size: 12px;
             border-radius: 6px;
-            color: var(--text);
+            color: var(--text) !important;
             cursor: pointer;
         }
+        .fmt-dd-item, .fmt-dd-item * { color: var(--text) !important; }
         .fmt-dd-item:hover { background: var(--surface-hover); }
+        .fmt-dd-item:hover, .fmt-dd-item:hover * { color: var(--text) !important; }
 
         /* Group bar */
         .group-bar {
