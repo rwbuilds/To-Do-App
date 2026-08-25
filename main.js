@@ -2,6 +2,15 @@ const { app, BrowserWindow, Tray, Menu, MenuItem, ipcMain, nativeImage, screen, 
 const path = require('path');
 const fs = require('fs');
 
+// Prevent a stray error from showing the Electron crash dialog / killing the app
+process.on('uncaughtException', (err) => { console.error('Uncaught:', err); });
+
+// Handle Squirrel install/uninstall events (creates Start Menu + desktop shortcuts).
+// Without this, the installer runs but no shortcuts are created.
+if (require('electron-squirrel-startup')) {
+  app.quit();
+}
+
 let mainWindow = null;
 let tray = null;
 let alwaysOnTop = true;
@@ -260,15 +269,18 @@ function createWindow() {
       i++;
       const t = ease(i / steps);
       if (!mainWindow) { clearInterval(iv); return; }
-      mainWindow.setBounds({
+      const nb = {
         x: Math.round(start.x + (target.x - start.x) * t),
         y: Math.round(start.y + (target.y - start.y) * t),
         width: Math.round(start.width + (target.width - start.width) * t),
         height: Math.round(start.height + (target.height - start.height) * t),
-      });
+      };
+      if ([nb.x, nb.y, nb.width, nb.height].every(v => isFinite(v)) && nb.width > 0 && nb.height > 0) {
+        try { mainWindow.setBounds(nb); } catch (e) {}
+      }
       if (i >= steps) {
         clearInterval(iv);
-        mainWindow.setBounds(target);
+        try { mainWindow.setBounds(target); } catch (e) {}
         setTimeout(() => { snapping = false; }, 60);
         if (done) done();
       }
@@ -408,10 +420,12 @@ ipcMain.on('minimize-window', () => {
 // Move the OS window to an absolute position (used for widget dragging)
 ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
   if (!mainWindow) return;
-  // Place the window so the cursor keeps the same grab offset
+  // Guard against NaN/undefined coords (can happen on rapid pointer events) — would crash setPosition
+  if (![mouseX, mouseY, offsetX, offsetY].every(v => typeof v === 'number' && isFinite(v))) return;
   const nx = Math.round(mouseX - offsetX);
   const ny = Math.round(mouseY - offsetY);
-  mainWindow.setPosition(nx, ny);
+  if (!isFinite(nx) || !isFinite(ny)) return;
+  try { mainWindow.setPosition(nx, ny); } catch (e) { return; }
   // In widget mode, track the anchor in memory (persisted on drag-end, not every frame)
   if (!mainWindow.isResizable()) {
     widgetAnchor = { x: nx, y: ny };
