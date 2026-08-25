@@ -8,6 +8,7 @@ let alwaysOnTop = true;
 let isExpanded = false;   // explicit expanded/widget state for reliable blur handling
 let isEditingNote = false; // renderer tells us when a note editor is open
 let suppressCollapse = false; // set briefly during file dialogs / link opens
+let snapSuppressUntil = 0;    // ignore snap evaluation briefly after programmatic resizes
 
 // ===== DUE REMINDERS =====
 let remindersEnabled = false;
@@ -210,6 +211,50 @@ function createWindow() {
     collapseToWidgetFromMain();
   });
 
+  // ===== CUSTOM SNAP-TO-EDGE (expanded mode) =====
+  // Frameless/always-on-top windows don't get native Aero Snap, so we do it ourselves:
+  // when the user finishes dragging the window near a screen edge/corner, snap it there.
+  let moveDebounce = null;
+  let snapping = false;
+  mainWindow.on('move', () => {
+    if (!isExpanded || snapping) return;
+    if (moveDebounce) clearTimeout(moveDebounce);
+    moveDebounce = setTimeout(evaluateSnap, 180); // 180ms after last move = drag ended
+  });
+
+  function evaluateSnap() {
+    if (!mainWindow || !isExpanded) return;
+    if (Date.now() < snapSuppressUntil) return; // just expanded/resized programmatically
+    const pt = screen.getCursorScreenPoint();
+    const disp = screen.getDisplayNearestPoint(pt);
+    const wa = disp.workArea;
+    const T = 20; // px from edge that counts as "in the snap zone"
+    const nearLeft = pt.x <= wa.x + T;
+    const nearRight = pt.x >= wa.x + wa.width - T;
+    const nearTop = pt.y <= wa.y + T;
+    const nearBottom = pt.y >= wa.y + wa.height - T;
+    const halfW = Math.floor(wa.width / 2);
+    const halfH = Math.floor(wa.height / 2);
+
+    let b = null;
+    if (nearTop && nearLeft)       b = { x: wa.x,          y: wa.y,          width: halfW,           height: halfH };
+    else if (nearTop && nearRight) b = { x: wa.x + halfW,  y: wa.y,          width: wa.width - halfW, height: halfH };
+    else if (nearBottom && nearLeft)  b = { x: wa.x,        y: wa.y + halfH,  width: halfW,           height: wa.height - halfH };
+    else if (nearBottom && nearRight) b = { x: wa.x + halfW, y: wa.y + halfH, width: wa.width - halfW, height: wa.height - halfH };
+    else if (nearLeft)             b = { x: wa.x,          y: wa.y,          width: halfW,           height: wa.height };
+    else if (nearRight)            b = { x: wa.x + halfW,  y: wa.y,          width: wa.width - halfW, height: wa.height };
+    else if (nearTop)              b = { x: wa.x,          y: wa.y,          width: wa.width,        height: wa.height }; // top edge = maximize
+
+    if (b) {
+      snapping = true;
+      mainWindow.setBounds(b, true);
+      EXPANDED_SIZE.width = b.width;
+      EXPANDED_SIZE.height = b.height;
+      saveSettings({ expandedW: b.width, expandedH: b.height });
+      setTimeout(() => { snapping = false; }, 250);
+    }
+  }
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -257,6 +302,7 @@ function showWindow() {
 // Collapse to widget from the main process (used on blur / click-away)
 function collapseToWidgetFromMain() {
   if (!mainWindow) return;
+  snapSuppressUntil = Date.now() + 600;
   const [curX, curY] = mainWindow.getPosition();
   const { workArea } = screen.getDisplayNearestPoint({ x: curX, y: curY });
 
@@ -284,6 +330,7 @@ ipcMain.on('resize-window', (event, state) => {
     // Remember where the widget was, so collapse can restore it exactly
     widgetAnchor = { x: curX, y: curY };
     isExpanded = true;
+    snapSuppressUntil = Date.now() + 600; // don't snap right after expanding
 
     mainWindow.setResizable(true);
     mainWindow.setMinimumSize(MIN_EXPANDED.width, MIN_EXPANDED.height);

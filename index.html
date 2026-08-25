@@ -2805,6 +2805,14 @@ function onNoteDragEnd(e) {
 
 // ===== CONTEXT MENU =====
 function showContextMenu(e, id) {
+    // If right-clicking inside an editable field (e.g. inline task edit textarea),
+    // let the native spellcheck/edit context menu handle it instead.
+    if (e.target && (e.target.classList.contains('todo-edit-input') ||
+                     e.target.isContentEditable ||
+                     e.target.tagName === 'INPUT' ||
+                     e.target.tagName === 'TEXTAREA')) {
+        return; // don't preventDefault → native menu (with spelling suggestions) appears
+    }
     e.preventDefault();
     contextTargetId = id;
     const menu = document.getElementById('contextMenu');
@@ -2975,40 +2983,46 @@ if (!window.widgetAPI) {
 } else {
     // Electron: widget drags the whole OS window, and a click (no drag) opens the app.
     const widgetEl = document.getElementById('widget');
-    let downX = 0, downY = 0, grabOffX = 0, grabOffY = 0, moved = false, dragging = false;
+    let downX = 0, downY = 0, grabOffX = 0, grabOffY = 0, moved = false, dragging = false, pointerId = null;
 
-    widgetEl.addEventListener('mousedown', (e) => {
+    widgetEl.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return; // left button only
         dragging = true;
         moved = false;
         downX = e.screenX;
         downY = e.screenY;
-        // Offset of the cursor within the window (window is at 0,0 origin on screen minus this)
-        grabOffX = e.clientX;
+        grabOffX = e.clientX;   // cursor offset within the widget window
         grabOffY = e.clientY;
+        pointerId = e.pointerId;
+        // Capture the pointer so we keep getting move/up events even when the
+        // cursor leaves the tiny widget window during a fast drag.
+        try { widgetEl.setPointerCapture(pointerId); } catch (err) {}
         e.preventDefault();
     });
 
-    window.addEventListener('mousemove', (e) => {
+    widgetEl.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const dx = e.screenX - downX;
         const dy = e.screenY - downY;
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
         if (moved) {
-            // Absolute placement: keep cursor at the same spot within the widget
             window.widgetAPI.moveWindow(e.screenX, e.screenY, grabOffX, grabOffY);
         }
     });
 
-    window.addEventListener('mouseup', () => {
-        if (dragging && !moved) {
-            // It was a click, not a drag → open the app
-            expandApp();
-        } else if (dragging && moved) {
-            // Persist the final widget position once
-            if (window.widgetAPI.moveWindowEnd) window.widgetAPI.moveWindowEnd();
+    const endDrag = () => {
+        if (!dragging) return;
+        if (!moved) {
+            expandApp();                       // it was a click
+        } else if (window.widgetAPI.moveWindowEnd) {
+            window.widgetAPI.moveWindowEnd();  // persist final position
         }
         dragging = false;
-    });
+        if (pointerId !== null) { try { widgetEl.releasePointerCapture(pointerId); } catch (err) {} pointerId = null; }
+    };
+
+    widgetEl.addEventListener('pointerup', endDrag);
+    widgetEl.addEventListener('pointercancel', endDrag);
 
     // Remove the inline onclick so it doesn't double-fire
     widgetEl.removeAttribute('onclick');
@@ -3067,6 +3081,18 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         switchTab('notes');
         createNote();
+    }
+    // Ctrl+C copies selected tasks (same as the Copy button) — only when tasks are
+    // selected and the user isn't typing in an input/editor (so normal text copy still works)
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') &&
+        currentTab === 'todos' && selectedIds.size > 0) {
+        const t = e.target;
+        const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+        const hasTextSelection = window.getSelection && window.getSelection().toString().length > 0;
+        if (!typing && !hasTextSelection) {
+            e.preventDefault();
+            copySelected();
+        }
     }
 });
 
