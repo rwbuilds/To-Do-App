@@ -119,6 +119,20 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
+  // Ensure the spell checker has a language loaded so it returns suggestions.
+  // Without an explicit language, words get flagged but dictionarySuggestions is empty.
+  try {
+    const ses = mainWindow.webContents.session;
+    const available = ses.availableSpellCheckerLanguages || [];
+    const prefer = ['en-US', 'en-GB', 'en'].filter(l => available.includes(l));
+    if (prefer.length) {
+      ses.setSpellCheckerLanguages(prefer);
+    } else if (available.length) {
+      ses.setSpellCheckerLanguages([available[0]]);
+    }
+    ses.setSpellCheckerEnabled(true);
+  } catch (e) { /* older Electron / unsupported platform */ }
+
   // Right-click context menu for editable areas: spelling suggestions + edit actions
   mainWindow.webContents.on('context-menu', (event, params) => {
     // Only show our menu in editable fields (note body, inputs) or on misspelled words

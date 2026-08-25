@@ -423,17 +423,21 @@
         .todo-check.checked::after { content: '✓'; color: #fff; font-size: 11px; font-weight: 700; }
 
         .todo-body { flex: 1; min-width: 0; }
-        .todo-text { font-size: 13px; color: var(--text); word-wrap: break-word; }
+        .todo-text { font-size: 13px; color: var(--text); word-wrap: break-word; white-space: pre-wrap; }
 
         .todo-edit-input {
             width: 100%;
             font-size: 13px;
+            font-family: inherit;
+            line-height: 1.4;
             background: var(--bg);
             border: 1px solid var(--accent);
             border-radius: 5px;
             color: var(--text);
             padding: 3px 6px;
             outline: none;
+            resize: none;
+            overflow: hidden;
         }
         
         .todo-meta {
@@ -1511,9 +1515,16 @@ function switchTab(tab) {
     todosEl.style.display = tab === 'todos' ? '' : 'none';
     notesEl.style.display = tab === 'notes' ? '' : 'none';
     if (tab === 'notes') {
-        document.getElementById('noteEditor').classList.remove('active');
-        document.getElementById('noteList').style.display = '';
-        renderNotes();
+        // If an editor was open, fully close it so the list + "+ New" return
+        if (editingNoteId) {
+            closeNoteEditor();
+        } else {
+            document.getElementById('noteEditor').classList.remove('active');
+            document.getElementById('noteList').style.display = '';
+            const tb = document.querySelector('#tab-notes .toolbar');
+            if (tb) tb.style.display = '';
+            renderNotes();
+        }
     }
 }
 
@@ -1748,28 +1759,38 @@ function startEditTodo(id, textEl) {
     const todo = data.todos.find(t => t.id === id);
     if (!todo) return;
 
-    const input = document.createElement('input');
-    input.type = 'text';
+    const input = document.createElement('textarea');
     input.value = todo.text;
     input.className = 'todo-edit-input';
+    input.rows = 1;
     // Prevent the parent task from being dragged while editing
     const parentItem = textEl.closest('.todo-item');
     if (parentItem) parentItem.setAttribute('draggable', 'false');
     textEl.replaceWith(input);
+    // Auto-grow the textarea to fit content
+    const autoGrow = () => { input.style.height = 'auto'; input.style.height = input.scrollHeight + 'px'; };
     input.focus();
     input.select();
+    autoGrow();
 
     const commit = () => {
-        const val = input.value.trim();
+        const val = input.value.replace(/\s+$/,''); // trim trailing whitespace/newlines
         if (val) todo.text = val;
         saveData();
         renderTodos();
     };
     const cancel = () => renderTodos();
 
+    input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            commit();               // Enter = save
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
+        }
+        // Shift+Enter falls through → inserts a newline naturally
     });
     input.addEventListener('blur', commit);
 }
