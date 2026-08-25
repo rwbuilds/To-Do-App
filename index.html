@@ -34,11 +34,11 @@
             overflow: hidden;
         }
 
-        /* Electron native drag regions — only the titlebar drags the window.
-           The widget uses JS-based drag+click detection so clicking opens it. */
-        .titlebar { -webkit-app-region: drag; }
+        /* Electron native drag regions — titlebar dragging is handled in JS (pointer
+           capture) so we can detect drag-end for snapping. */
         .titlebar-btn, button, input, select, textarea,
         .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
+        body.electron .titlebar { cursor: grab; }
 
         /* Electron: window itself is sized to content, so anchor top-left */
         body.electron #widget { top: 0; left: 0; right: auto; width: 56px; height: 56px; margin: 0; cursor: grab; }
@@ -1783,14 +1783,35 @@ function startEditTodo(id, textEl) {
 
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            // Ctrl+Enter → new line, continuing a numbered list if one is detected
+            e.preventDefault();
+            const val = input.value;
+            const pos = input.selectionStart;
+            const before = val.slice(0, pos);
+            const after = val.slice(pos);
+            // Find the number that starts the current line
+            const lineStart = before.lastIndexOf('\n') + 1;
+            const curLine = before.slice(lineStart);
+            const m = curLine.match(/^(\s*)(\d+)([.)])\s/);
+            let insert = '\n';
+            if (m) {
+                const indent = m[1];
+                const next = parseInt(m[2], 10) + 1;
+                insert = `\n${indent}${next}${m[3]} `;
+            }
+            input.value = before + insert + after;
+            const newPos = before.length + insert.length;
+            input.setSelectionRange(newPos, newPos);
+            autoGrow();
+        } else if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             commit();               // Enter = save
         } else if (e.key === 'Escape') {
             e.preventDefault();
             cancel();
         }
-        // Shift+Enter falls through → inserts a newline naturally
+        // Shift+Enter falls through → inserts a plain newline
     });
     input.addEventListener('blur', commit);
 }
@@ -2817,6 +2838,7 @@ function showContextMenu(e, id) {
     contextTargetId = id;
     const menu = document.getElementById('contextMenu');
     menu.style.display = 'block';
+    // Provisional position; will be clamped on-screen after content is populated below
     menu.style.left = e.clientX + 'px';
     menu.style.top = e.clientY + 'px';
     // Close the group sub-menu and populate it with current groups
@@ -2847,6 +2869,18 @@ function showContextMenu(e, id) {
         // Hide section menu if the task's group has no sections
         document.getElementById('ctxSectionSub').style.display = 'none';
     }
+
+    // Clamp the menu so it never spills off-screen (flip up/left near edges)
+    requestAnimationFrame(() => {
+        const rect = menu.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const margin = 6;
+        let x = e.clientX, y = e.clientY;
+        if (x + rect.width > vw - margin) x = Math.max(margin, vw - rect.width - margin);
+        if (y + rect.height > vh - margin) y = Math.max(margin, vh - rect.height - margin);
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+    });
 }
 
 function hideContextMenu() {
@@ -3026,6 +3060,36 @@ if (!window.widgetAPI) {
 
     // Remove the inline onclick so it doesn't double-fire
     widgetEl.removeAttribute('onclick');
+
+    // ===== Titlebar drag (expanded window) with pointer capture + snap on release =====
+    const titlebar = document.getElementById('titlebar');
+    if (titlebar) {
+        let tOffX = 0, tOffY = 0, tDragging = false, tPointer = null, tMoved = false;
+        titlebar.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            // Ignore drags that start on the titlebar buttons
+            if (e.target.closest('.titlebar-btn')) return;
+            tDragging = true; tMoved = false;
+            tOffX = e.clientX; tOffY = e.clientY;
+            tPointer = e.pointerId;
+            try { titlebar.setPointerCapture(tPointer); } catch (err) {}
+            e.preventDefault();
+        });
+        titlebar.addEventListener('pointermove', (e) => {
+            if (!tDragging) return;
+            tMoved = true;
+            window.widgetAPI.moveWindow(e.screenX, e.screenY, tOffX, tOffY);
+        });
+        const tEnd = () => {
+            if (!tDragging) return;
+            tDragging = false;
+            if (tPointer !== null) { try { titlebar.releasePointerCapture(tPointer); } catch (err) {} tPointer = null; }
+            // Evaluate snap only now, on actual release (fixes the "changed my mind" bug)
+            if (tMoved && window.widgetAPI.windowDrop) window.widgetAPI.windowDrop();
+        };
+        titlebar.addEventListener('pointerup', tEnd);
+        titlebar.addEventListener('pointercancel', tEnd);
+    }
 }
 
 // ===== HELPERS =====

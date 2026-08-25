@@ -212,23 +212,17 @@ function createWindow() {
   });
 
   // ===== CUSTOM SNAP-TO-EDGE (expanded mode) =====
-  // Frameless/always-on-top windows don't get native Aero Snap, so we do it ourselves:
-  // when the user finishes dragging the window near a screen edge/corner, snap it there.
-  let moveDebounce = null;
+  // Snap is evaluated only when the drag actually ends (renderer sends 'window-drop'),
+  // so changing your mind mid-drag never forces an unwanted snap.
   let snapping = false;
-  mainWindow.on('move', () => {
-    if (!isExpanded || snapping) return;
-    if (moveDebounce) clearTimeout(moveDebounce);
-    moveDebounce = setTimeout(evaluateSnap, 180); // 180ms after last move = drag ended
-  });
 
   function evaluateSnap() {
-    if (!mainWindow || !isExpanded) return;
-    if (Date.now() < snapSuppressUntil) return; // just expanded/resized programmatically
+    if (!mainWindow || !isExpanded || snapping) return;
+    if (Date.now() < snapSuppressUntil) return;
     const pt = screen.getCursorScreenPoint();
     const disp = screen.getDisplayNearestPoint(pt);
     const wa = disp.workArea;
-    const T = 20; // px from edge that counts as "in the snap zone"
+    const T = 24; // px from edge that counts as "in the snap zone"
     const nearLeft = pt.x <= wa.x + T;
     const nearRight = pt.x >= wa.x + wa.width - T;
     const nearTop = pt.y <= wa.y + T;
@@ -243,17 +237,46 @@ function createWindow() {
     else if (nearBottom && nearRight) b = { x: wa.x + halfW, y: wa.y + halfH, width: wa.width - halfW, height: wa.height - halfH };
     else if (nearLeft)             b = { x: wa.x,          y: wa.y,          width: halfW,           height: wa.height };
     else if (nearRight)            b = { x: wa.x + halfW,  y: wa.y,          width: wa.width - halfW, height: wa.height };
-    else if (nearTop)              b = { x: wa.x,          y: wa.y,          width: wa.width,        height: wa.height }; // top edge = maximize
+    else if (nearTop)              b = { x: wa.x,          y: wa.y,          width: wa.width,        height: wa.height };
 
     if (b) {
-      snapping = true;
-      mainWindow.setBounds(b, true);
-      EXPANDED_SIZE.width = b.width;
-      EXPANDED_SIZE.height = b.height;
-      saveSettings({ expandedW: b.width, expandedH: b.height });
-      setTimeout(() => { snapping = false; }, 250);
+      tweenBounds(b, () => {
+        EXPANDED_SIZE.width = b.width;
+        EXPANDED_SIZE.height = b.height;
+        saveSettings({ expandedW: b.width, expandedH: b.height });
+      });
     }
   }
+
+  // Smoothly animate the window to target bounds (~140ms ease-out)
+  function tweenBounds(target, done) {
+    if (!mainWindow) return;
+    snapping = true;
+    const start = mainWindow.getBounds();
+    const steps = 10;
+    let i = 0;
+    const ease = t => 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const iv = setInterval(() => {
+      i++;
+      const t = ease(i / steps);
+      if (!mainWindow) { clearInterval(iv); return; }
+      mainWindow.setBounds({
+        x: Math.round(start.x + (target.x - start.x) * t),
+        y: Math.round(start.y + (target.y - start.y) * t),
+        width: Math.round(start.width + (target.width - start.width) * t),
+        height: Math.round(start.height + (target.height - start.height) * t),
+      });
+      if (i >= steps) {
+        clearInterval(iv);
+        mainWindow.setBounds(target);
+        setTimeout(() => { snapping = false; }, 60);
+        if (done) done();
+      }
+    }, 14);
+  }
+
+  // Renderer tells us the titlebar drag ended → evaluate snap once
+  mainWindow._evaluateSnap = evaluateSnap;
 
   mainWindow.on('closed', () => { mainWindow = null; });
 }
@@ -462,6 +485,11 @@ ipcMain.on('open-external', (event, url) => {
 // Renderer tells us when a note editor is open (so we don't collapse mid-edit)
 ipcMain.on('set-editing', (event, editing) => {
   isEditingNote = !!editing;
+});
+
+// Renderer: titlebar drag ended → evaluate snap once (drop-based, not pause-based)
+ipcMain.on('window-drop', () => {
+  if (mainWindow && mainWindow._evaluateSnap) mainWindow._evaluateSnap();
 });
 
 // Briefly suppress click-away collapse (during file dialogs / link opens)
