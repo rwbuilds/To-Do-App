@@ -503,7 +503,55 @@ ipcMain.on('set-editing', (event, editing) => {
 
 // Renderer: titlebar drag ended → evaluate snap once (drop-based, not pause-based)
 ipcMain.on('window-drop', () => {
+  destroySnapPreview();
   if (mainWindow && mainWindow._evaluateSnap) mainWindow._evaluateSnap();
+});
+
+// ===== SNAP PREVIEW OVERLAY =====
+let snapPreviewWin = null;
+
+function computeSnapBounds() {
+  const pt = screen.getCursorScreenPoint();
+  const wa = screen.getDisplayNearestPoint(pt).workArea;
+  const T = 24, halfW = Math.floor(wa.width / 2), halfH = Math.floor(wa.height / 2);
+  const nl = pt.x <= wa.x + T, nr = pt.x >= wa.x + wa.width - T;
+  const nt = pt.y <= wa.y + T, nb = pt.y >= wa.y + wa.height - T;
+  if (nt && nl) return { x: wa.x, y: wa.y, width: halfW, height: halfH };
+  if (nt && nr) return { x: wa.x + halfW, y: wa.y, width: wa.width - halfW, height: halfH };
+  if (nb && nl) return { x: wa.x, y: wa.y + halfH, width: halfW, height: wa.height - halfH };
+  if (nb && nr) return { x: wa.x + halfW, y: wa.y + halfH, width: wa.width - halfW, height: wa.height - halfH };
+  if (nl) return { x: wa.x, y: wa.y, width: halfW, height: wa.height };
+  if (nr) return { x: wa.x + halfW, y: wa.y, width: wa.width - halfW, height: wa.height };
+  if (nt) return { x: wa.x, y: wa.y, width: wa.width, height: wa.height };
+  return null;
+}
+
+function showSnapPreview() {
+  const b = computeSnapBounds();
+  if (!b) { destroySnapPreview(); return; }
+  if (!snapPreviewWin) {
+    snapPreviewWin = new BrowserWindow({
+      frame: false, transparent: true, resizable: false, movable: false,
+      focusable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
+      webPreferences: { contextIsolation: true },
+    });
+    snapPreviewWin.setIgnoreMouseEvents(true);
+    snapPreviewWin.setAlwaysOnTop(true, 'screen-saver');
+    snapPreviewWin.loadURL('data:text/html,' + encodeURIComponent(
+      '<body style="margin:0;overflow:hidden;"><div style="width:100vw;height:100vh;box-sizing:border-box;background:rgba(124,92,252,0.22);border:2px solid rgba(124,92,252,0.8);border-radius:8px;"></div></body>'
+    ));
+  }
+  snapPreviewWin.setBounds(b);
+  if (!snapPreviewWin.isVisible()) snapPreviewWin.showInactive();
+}
+
+function destroySnapPreview() {
+  if (snapPreviewWin) { try { snapPreviewWin.close(); } catch (e) {} snapPreviewWin = null; }
+}
+
+// Renderer sends this on each titlebar drag move → update the preview
+ipcMain.on('snap-preview', () => {
+  if (isExpanded) showSnapPreview();
 });
 
 // Briefly suppress click-away collapse (during file dialogs / link opens)

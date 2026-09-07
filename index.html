@@ -750,6 +750,20 @@
 
         .separator { height: 1px; background: var(--border); margin: 4px 0; }
 
+        /* Small section quick-nav chips */
+        .sec-nav-btn {
+            font-size: 9px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.12s;
+        }
+        .sec-nav-btn:hover { color: var(--accent); border-color: var(--accent); }
+
         /* Tag colors */
         .tag-work { background: rgba(56,189,248,0.2); color: var(--tag-blue); }
         .tag-personal { background: rgba(74,222,128,0.2); color: var(--tag-green); }
@@ -1705,6 +1719,7 @@ function toggleTodo(id) {
         todo.completed = !todo.completed;
         if (todo.completed) {
             todo.completedAt = new Date().toISOString();
+            todo.wip = false;   // completing a task clears its WIP status
             // Recurring task → spawn the next occurrence
             if (todo.repeat && todo.repeat !== 'none') {
                 spawnNextOccurrence(todo);
@@ -1870,8 +1885,16 @@ function renderTodos() {
                             unsectioned.push(t);
                         }
                     });
-                    // Render unsectioned first
-                    html += unsectioned.map(renderTodoItem).join('');
+                    // Unsectioned ("General") — collapsible header only when the group has sections
+                    if (sections.length && unsectioned.length) {
+                        const genKey = g + ':__general__';
+                        html += renderSectionHeader(g, 'General', unsectioned.length, true);
+                        if (!collapsedSections.has(genKey)) {
+                            html += unsectioned.map(renderTodoItem).join('');
+                        }
+                    } else {
+                        html += unsectioned.map(renderTodoItem).join('');
+                    }
                     // Then each section — ALWAYS show, even if empty
                     sections.forEach(sec => {
                         const count = sectionedTasks[sec] ? sectionedTasks[sec].length : 0;
@@ -1922,31 +1945,52 @@ function renderTodos() {
 function renderGroupHeader(name, count, ungrouped) {
     const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:18px;height:18px;flex-shrink:0;">✕</button>`;
     const addSecBtn = ungrouped ? '' : `<button class="todo-action-btn" onclick="promptAddSection('${escapeHtml(name)}')" title="Add section" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">+</button>`;
+
+    // Collapse/expand-all toggle (only if the group has sections)
+    const sections = ungrouped ? [] : (data.sections[name] || []);
+    let collapseBtn = '';
+    let navButtons = '';
+    if (!ungrouped && sections.length) {
+        // All collapsible section keys for this group (incl. General)
+        const keys = ['__general__', ...sections].map(s => name + ':' + s);
+        const allCollapsed = keys.every(k => collapsedSections.has(k));
+        collapseBtn = `<button class="todo-action-btn" onclick="toggleCollapseAll('${escapeHtml(name)}')" title="${allCollapsed ? 'Expand all' : 'Collapse all'}" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">${allCollapsed ? '⊞' : '⊟'}</button>`;
+        // Quick section navigation chips (group-specific)
+        navButtons = `<div class="section-nav" style="display:flex; gap:4px; flex-wrap:wrap; margin:2px 0 4px 12px;">` +
+            sections.map(s => `<button class="sec-nav-btn" onclick="scrollToSection('${escapeHtml(name)}','${escapeHtml(s).replace(/'/g,"\\'")}')" title="Go to ${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('') +
+            `</div>`;
+    }
+
     return `<div class="group-header" style="display:flex; flex-direction:row; align-items:center; gap:8px; padding:8px 4px 4px;">
         <span class="group-name" style="color:var(--text-dim); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; flex-shrink:0;">${escapeHtml(name)}</span>
         <span class="group-count" style="color:var(--text-dim); font-size:10px; flex-shrink:0;">${count}</span>
         <div class="group-line" style="flex:1; height:1px; background:var(--border);"></div>
+        ${collapseBtn}
         ${addSecBtn}
         ${delBtn}
-    </div>`;
+    </div>${navButtons}`;
 }
 
-function renderSectionHeader(groupName, sectionName, count) {
-    const key = groupName + ':' + sectionName;
+function renderSectionHeader(groupName, sectionName, count, isGeneral) {
+    const secId = isGeneral ? '__general__' : sectionName;
+    const key = groupName + ':' + secId;
     const isCollapsed = collapsedSections.has(key);
     const arrow = isCollapsed ? '▸' : '▾';
-    return `<div class="section-header" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px; cursor:grab;"
-         draggable="true"
+    const dragAttrs = isGeneral ? '' : `draggable="true"
          data-group="${escapeHtml(groupName)}" data-section="${escapeHtml(sectionName)}"
          ondragstart="onSectionDragStart(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')"
-         ondragover="event.preventDefault(); this.style.borderBottom='2px solid var(--accent)';"
+         ondragover="event.preventDefault(); autoScrollDuringDrag(event); this.style.borderBottom='2px solid var(--accent)';"
          ondragleave="this.style.borderBottom='';"
-         ondrop="event.preventDefault(); this.style.borderBottom=''; onSectionOrTaskDrop(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}');">
-        <span style="cursor:pointer; font-size:10px; color:var(--accent);" onclick="toggleSectionCollapse('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')">${arrow}</span>
-        <span style="color:var(--accent); font-size:9px; font-weight:600; letter-spacing:0.3px; flex-shrink:0;">${escapeHtml(sectionName)}</span>
+         ondrop="event.preventDefault(); this.style.borderBottom=''; onSectionOrTaskDrop(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}');"`;
+    const delBtn = isGeneral ? '' : `<button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">✕</button>`;
+    const nameColor = isGeneral ? 'var(--text-dim)' : 'var(--accent)';
+    return `<div class="section-header" data-anchor="${escapeHtml(groupName + '::' + secId)}" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px; ${isGeneral ? '' : 'cursor:grab;'}"
+         ${dragAttrs}>
+        <span style="cursor:pointer; font-size:10px; color:${nameColor};" onclick="toggleSectionCollapse('${escapeHtml(groupName)}', '${escapeHtml(secId)}')">${arrow}</span>
+        <span style="color:${nameColor}; font-size:9px; font-weight:600; letter-spacing:0.3px; flex-shrink:0;">${escapeHtml(sectionName)}</span>
         <span style="color:var(--text-dim); font-size:9px; flex-shrink:0;">${count}</span>
         <div style="flex:1; height:1px; background:var(--border);"></div>
-        <button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">✕</button>
+        ${delBtn}
     </div>`;
 }
 
@@ -2066,6 +2110,17 @@ function renderTodoItem(t) {
 // ===== DRAG TO REORDER =====
 let dragSrcId = null;
 
+// Auto-scroll the visible list when dragging near its top/bottom edge
+function autoScrollDuringDrag(e) {
+    const container = document.querySelector('#tab-todos:not(.tab-hidden) .content')
+        || document.getElementById('todoList');
+    if (!container) return;
+    const r = container.getBoundingClientRect();
+    const zone = 48, speed = 16;
+    if (e.clientY < r.top + zone) container.scrollTop -= speed;
+    else if (e.clientY > r.bottom - zone) container.scrollTop += speed;
+}
+
 function onTodoDragStart(e, id) {
     dragSrcId = id;
     e.dataTransfer.effectAllowed = 'move';
@@ -2075,6 +2130,7 @@ function onTodoDragStart(e, id) {
 function onTodoDragOver(e, id) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    autoScrollDuringDrag(e);
     e.currentTarget.style.borderTop = '2px solid var(--accent)';
 }
 
@@ -2136,6 +2192,35 @@ function toggleSectionCollapse(groupName, sectionName) {
     if (collapsedSections.has(key)) collapsedSections.delete(key);
     else collapsedSections.add(key);
     renderTodos();
+}
+
+// Collapse or expand ALL sections in a group (including the General/unsectioned area)
+function toggleCollapseAll(groupName) {
+    const sections = data.sections[groupName] || [];
+    const keys = ['__general__', ...sections].map(s => groupName + ':' + s);
+    const allCollapsed = keys.every(k => collapsedSections.has(k));
+    keys.forEach(k => {
+        if (allCollapsed) collapsedSections.delete(k);  // expand all
+        else collapsedSections.add(k);                  // collapse all
+    });
+    renderTodos();
+}
+
+// Scroll to a specific section within a group (group-specific quick nav)
+function scrollToSection(groupName, sectionName) {
+    // Expand it first if collapsed so it's visible
+    const key = groupName + ':' + sectionName;
+    if (collapsedSections.has(key)) { collapsedSections.delete(key); renderTodos(); }
+    requestAnimationFrame(() => {
+        const anchor = groupName + '::' + sectionName;
+        const el = document.querySelector(`.section-header[data-anchor="${CSS.escape(anchor)}"]`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.style.transition = 'background 0.3s';
+            el.style.background = 'var(--surface-hover)';
+            setTimeout(() => { el.style.background = ''; }, 700);
+        }
+    });
 }
 
 // Section reordering via drag
@@ -2800,6 +2885,8 @@ function onNoteDragStart(e, id) {
 function onNoteDragOver(e, id) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    const c = document.getElementById('noteList');
+    if (c) { const r = c.getBoundingClientRect(); if (e.clientY < r.top+48) c.scrollTop -= 16; else if (e.clientY > r.bottom-48) c.scrollTop += 16; }
     e.currentTarget.style.borderTop = '2px solid var(--accent)';
 }
 function onNoteDragLeave(e) {
@@ -3079,6 +3166,7 @@ if (!window.widgetAPI) {
             if (!tDragging) return;
             tMoved = true;
             window.widgetAPI.moveWindow(e.screenX, e.screenY, tOffX, tOffY);
+            if (window.widgetAPI.snapPreview) window.widgetAPI.snapPreview();
         });
         const tEnd = () => {
             if (!tDragging) return;
