@@ -369,7 +369,7 @@ ipcMain.on('resize-window', (event, state) => {
     isExpanded = true;
     snapSuppressUntil = Date.now() + 600; // don't snap right after expanding
 
-    mainWindow.setResizable(true);
+    mainWindow.setResizable(false);
     mainWindow.setMinimumSize(MIN_EXPANDED.width, MIN_EXPANDED.height);
 
     // If we have a remembered expanded position/size and it's still on-screen, restore it
@@ -429,15 +429,23 @@ ipcMain.on('minimize-to-tray', () => {
   if (mainWindow) mainWindow.hide();
 });
 
-// While the titlebar is being dragged, disable resizing so the OS doesn't
-// interpret an edge-grab as a resize (window growing right/down).
-ipcMain.on('set-dragging', (event, isDragging) => {
-  if (!mainWindow) return;
-  if (isDragging) {
-    mainWindow.setResizable(false);
-  } else if (isExpanded) {
-    mainWindow.setResizable(true);
-  }
+// (Titlebar drag no longer needs to toggle resizable — the window stays
+// non-resizable at the OS level; resizing is done via the custom corner grip.)
+ipcMain.on('set-dragging', () => {});
+
+// Custom resize grip: set the expanded window's size (clamped), keeping top-left anchored
+ipcMain.on('resize-to', (event, w, h) => {
+  if (!mainWindow || !isExpanded) return;
+  if (typeof w !== 'number' || typeof h !== 'number' || !isFinite(w) || !isFinite(h)) return;
+  const width = Math.max(MIN_EXPANDED.width, Math.round(w));
+  const height = Math.max(MIN_EXPANDED.height, Math.round(h));
+  const [x, y] = mainWindow.getPosition();
+  try {
+    mainWindow.setBounds({ x, y, width, height });
+    EXPANDED_SIZE.width = width;
+    EXPANDED_SIZE.height = height;
+    saveSettings({ expandedW: width, expandedH: height });
+  } catch (e) {}
 });
 
 // Real OS minimize — keeps the app in the Windows taskbar

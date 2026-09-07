@@ -40,6 +40,23 @@
         .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
         body.electron .titlebar { cursor: grab; }
 
+        /* Custom resize grip (bottom-right corner) — only in Electron */
+        .resize-grip { display: none; }
+        body.electron .resize-grip {
+            display: block;
+            position: absolute;
+            right: 0; bottom: 0;
+            width: 16px; height: 16px;
+            cursor: nwse-resize;
+            z-index: 100000;
+            background:
+              linear-gradient(135deg, transparent 50%, var(--text-dim) 50%, var(--text-dim) 60%, transparent 60%,
+              transparent 70%, var(--text-dim) 70%, var(--text-dim) 80%, transparent 80%);
+            opacity: 0.6;
+        }
+        body.electron .resize-grip:hover { opacity: 1; }
+        body.widget-mode .resize-grip { display: none !important; }
+
         /* Electron: window itself is sized to content, so anchor top-left */
         body.electron #widget { top: 0; left: 0; right: auto; width: 56px; height: 56px; margin: 0; cursor: grab; }
         body.electron #app {
@@ -1102,6 +1119,7 @@
 
 <!-- Expanded App -->
 <div id="app">
+    <div class="resize-grip" id="resizeGrip" title="Drag to resize"></div>
     <div class="titlebar" id="titlebar">
         <h1>✍️ Jot</h1>
         <div class="titlebar-btns">
@@ -3180,6 +3198,35 @@ if (!window.widgetAPI) {
         titlebar.addEventListener('pointerup', tEnd);
         titlebar.addEventListener('pointercancel', tEnd);
     }
+
+    // ===== Resize grip (bottom-right corner) =====
+    const grip = document.getElementById('resizeGrip');
+    if (grip) {
+        let rw = 0, rh = 0, rStartX = 0, rStartY = 0, rDragging = false, rPointer = null;
+        grip.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            rDragging = true;
+            rStartX = e.screenX; rStartY = e.screenY;
+            rw = window.innerWidth; rh = window.innerHeight;
+            rPointer = e.pointerId;
+            try { grip.setPointerCapture(rPointer); } catch (err) {}
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        grip.addEventListener('pointermove', (e) => {
+            if (!rDragging) return;
+            const w = rw + (e.screenX - rStartX);
+            const h = rh + (e.screenY - rStartY);
+            if (window.widgetAPI.resizeTo) window.widgetAPI.resizeTo(w, h);
+        });
+        const rEnd = () => {
+            if (!rDragging) return;
+            rDragging = false;
+            if (rPointer !== null) { try { grip.releasePointerCapture(rPointer); } catch (err) {} rPointer = null; }
+        };
+        grip.addEventListener('pointerup', rEnd);
+        grip.addEventListener('pointercancel', rEnd);
+    }
 }
 
 // ===== HELPERS =====
@@ -3394,21 +3441,44 @@ function renderAll() {
 }
 
 // ===== INIT =====
-// Container-level auto-scroll: fires while dragging anywhere over the task/note list
-// (including gaps between items), plus allow the wheel to scroll during a drag.
+// Continuous edge auto-scroll while dragging tasks/notes/sections.
+// (HTML5 drag suppresses the wheel, so we scroll continuously when the pointer
+//  hovers near the top/bottom edge of the list — even if held still.)
+let _dragScrollTimer = null;
+let _dragScrollDir = 0;
+function startDragScroll(container) {
+    if (_dragScrollTimer) return;
+    _dragScrollTimer = setInterval(() => {
+        if (_dragScrollDir !== 0 && container) container.scrollTop += _dragScrollDir * 12;
+    }, 16);
+}
+function stopDragScroll() {
+    if (_dragScrollTimer) { clearInterval(_dragScrollTimer); _dragScrollTimer = null; }
+    _dragScrollDir = 0;
+}
 ['todoList', 'noteList'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('dragover', (e) => {
         e.preventDefault();
         const r = el.getBoundingClientRect();
-        const zone = 50, speed = 18;
-        if (e.clientY < r.top + zone) el.scrollTop -= speed;
-        else if (e.clientY > r.bottom - zone) el.scrollTop += speed;
+        const zone = 55;
+        if (e.clientY < r.top + zone) _dragScrollDir = -1;
+        else if (e.clientY > r.bottom - zone) _dragScrollDir = 1;
+        else _dragScrollDir = 0;
+        startDragScroll(el);
     });
-    // Wheel scrolling still works even mid-drag
+    el.addEventListener('drop', stopDragScroll);
+    el.addEventListener('dragleave', (e) => {
+        // stop if leaving the container entirely
+        const r = el.getBoundingClientRect();
+        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) _dragScrollDir = 0;
+    });
+    // Normal wheel scrolling (works when not mid-HTML5-drag)
     el.addEventListener('wheel', (e) => { el.scrollTop += e.deltaY; }, { passive: true });
 });
+// Safety: stop auto-scroll whenever any drag ends
+document.addEventListener('dragend', stopDragScroll);
 
 applyTheme((data.settings && data.settings.theme) || 'purple');
 if (data.settings && data.settings.theme === 'custom' && data.settings.customAccent) {
