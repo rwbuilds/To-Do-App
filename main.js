@@ -18,6 +18,7 @@ let isExpanded = false;   // explicit expanded/widget state for reliable blur ha
 let isEditingNote = false; // renderer tells us when a note editor is open
 let suppressCollapse = false; // set briefly during file dialogs / link opens
 let snapSuppressUntil = 0;    // ignore snap evaluation briefly after programmatic resizes
+let lastExpandedBounds = null; // remember where/what size the expanded window last was
 
 // ===== DUE REMINDERS =====
 let remindersEnabled = false;
@@ -338,6 +339,7 @@ function showWindow() {
 function collapseToWidgetFromMain() {
   if (!mainWindow) return;
   snapSuppressUntil = Date.now() + 600;
+  if (isExpanded) lastExpandedBounds = mainWindow.getBounds(); // remember expanded state
   const [curX, curY] = mainWindow.getPosition();
   const { workArea } = screen.getDisplayNearestPoint({ x: curX, y: curY });
 
@@ -369,6 +371,19 @@ ipcMain.on('resize-window', (event, state) => {
 
     mainWindow.setResizable(true);
     mainWindow.setMinimumSize(MIN_EXPANDED.width, MIN_EXPANDED.height);
+
+    // If we have a remembered expanded position/size and it's still on-screen, restore it
+    if (lastExpandedBounds) {
+      const b = lastExpandedBounds;
+      const d = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
+      const onScreen = b.x + 40 < d.x + d.width && b.x + b.width - 40 > d.x &&
+                       b.y + 20 < d.y + d.height && b.y + 10 > d.y;
+      if (onScreen) {
+        mainWindow.setBounds(b);
+        return;
+      }
+    }
+
     mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height);
 
     // Anchor: keep the widget's top-left, but if that puts the window
@@ -387,6 +402,8 @@ ipcMain.on('resize-window', (event, state) => {
     mainWindow.setPosition(Math.round(x), Math.round(y));
 
   } else { // widget
+    // Remember the expanded bounds so we can restore them next expand
+    if (isExpanded) lastExpandedBounds = mainWindow.getBounds();
     // Clear the minimum first, otherwise the window can't shrink to widget size
     mainWindow.setMinimumSize(WIDGET_SIZE.width, WIDGET_SIZE.height);
     mainWindow.setResizable(false);
@@ -410,6 +427,17 @@ ipcMain.on('resize-window', (event, state) => {
 
 ipcMain.on('minimize-to-tray', () => {
   if (mainWindow) mainWindow.hide();
+});
+
+// While the titlebar is being dragged, disable resizing so the OS doesn't
+// interpret an edge-grab as a resize (window growing right/down).
+ipcMain.on('set-dragging', (event, isDragging) => {
+  if (!mainWindow) return;
+  if (isDragging) {
+    mainWindow.setResizable(false);
+  } else if (isExpanded) {
+    mainWindow.setResizable(true);
+  }
 });
 
 // Real OS minimize — keeps the app in the Windows taskbar

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   moveWindowEnd: () => ipcRenderer.send('move-window-end'),
   windowDrop: () => ipcRenderer.send('window-drop'),
   snapPreview: () => ipcRenderer.send('snap-preview'),
+  setDragging: (v) => ipcRenderer.send('set-dragging', v),
   setAlwaysOnTop: (value) => ipcRenderer.send('set-always-on-top', value),
   quitApp: () => ipcRenderer.send('quit-app'),
   setAutoLaunch: (value) => ipcRenderer.send('set-auto-launch', value),

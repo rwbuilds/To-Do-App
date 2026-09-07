@@ -3159,6 +3159,7 @@ if (!window.widgetAPI) {
             tDragging = true; tMoved = false;
             tOffX = e.clientX; tOffY = e.clientY;
             tPointer = e.pointerId;
+            if (window.widgetAPI.setDragging) window.widgetAPI.setDragging(true);
             try { titlebar.setPointerCapture(tPointer); } catch (err) {}
             e.preventDefault();
         });
@@ -3172,6 +3173,7 @@ if (!window.widgetAPI) {
             if (!tDragging) return;
             tDragging = false;
             if (tPointer !== null) { try { titlebar.releasePointerCapture(tPointer); } catch (err) {} tPointer = null; }
+            if (window.widgetAPI.setDragging) window.widgetAPI.setDragging(false);
             // Evaluate snap only now, on actual release (fixes the "changed my mind" bug)
             if (tMoved && window.widgetAPI.windowDrop) window.widgetAPI.windowDrop();
         };
@@ -3392,6 +3394,22 @@ function renderAll() {
 }
 
 // ===== INIT =====
+// Container-level auto-scroll: fires while dragging anywhere over the task/note list
+// (including gaps between items), plus allow the wheel to scroll during a drag.
+['todoList', 'noteList'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const r = el.getBoundingClientRect();
+        const zone = 50, speed = 18;
+        if (e.clientY < r.top + zone) el.scrollTop -= speed;
+        else if (e.clientY > r.bottom - zone) el.scrollTop += speed;
+    });
+    // Wheel scrolling still works even mid-drag
+    el.addEventListener('wheel', (e) => { el.scrollTop += e.deltaY; }, { passive: true });
+});
+
 applyTheme((data.settings && data.settings.theme) || 'purple');
 if (data.settings && data.settings.theme === 'custom' && data.settings.customAccent) {
     applyCustomAccent(data.settings.customAccent);
