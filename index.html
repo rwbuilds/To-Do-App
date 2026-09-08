@@ -40,6 +40,70 @@
         .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
         body.electron .titlebar { cursor: grab; }
 
+        /* Sort dropdown */
+        .sort-select {
+            background: var(--bg); color: var(--text-dim);
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 2px 6px; font-size: 11px; cursor: pointer;
+        }
+        .sort-select:hover { color: var(--text); border-color: var(--accent); }
+
+        /* Reusable modal */
+        .modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 100000;
+            align-items: center; justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+            width: 260px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        .modal-title { font-size: 14px; font-weight: 700; color: var(--text); }
+        .modal-field {
+            display: flex; flex-direction: column; gap: 4px;
+            font-size: 11px; color: var(--text-dim);
+        }
+        .modal-field input, .modal-field select {
+            background: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 6px 8px; font-size: 13px;
+        }
+        .modal-actions { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
+        /* Note folders & tags */
+        .note-folder-bar {
+            display: flex; gap: 6px; padding: 6px 12px 0;
+            overflow-x: auto; white-space: nowrap;
+        }
+        .note-folder-bar::-webkit-scrollbar { height: 0; }
+        .note-folder-pill {
+            border: 1px solid var(--border); background: transparent;
+            color: var(--text-dim); border-radius: 12px;
+            padding: 3px 10px; font-size: 11px; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+        }
+        .note-folder-pill:hover { border-color: var(--accent); color: var(--text); }
+        .note-folder-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .note-meta-row {
+            display: flex; gap: 8px; padding: 6px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .note-meta-row select, .note-tags-input {
+            background: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 4px 6px; font-size: 11px;
+        }
+        .note-tags-input { flex: 1; }
+        .note-card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+
         /* In-note find bar */
         .note-find-bar {
             display: flex;
@@ -151,6 +215,13 @@
         }
 
         #widget .badge.hidden { display: none; }
+        #widget .badge.badge-due {
+            animation: badgePulse 1.6s ease-in-out infinite;
+        }
+        @keyframes badgePulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
+            50% { box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+        }
 
         /* ===== EXPANDED APP ===== */
         #app {
@@ -1180,6 +1251,14 @@
                 <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
                 <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
                 <button class="filter-btn" id="filterArchived" onclick="setFilter('archived')">Archived</button>
+                <div style="flex:1;"></div>
+                <select id="sortSelect" class="sort-select" title="Sort tasks within each section" onchange="setSort(this.value)">
+                    <option value="manual">Manual</option>
+                    <option value="due">Due date</option>
+                    <option value="priority">Priority</option>
+                    <option value="created">Newest</option>
+                    <option value="alpha">A–Z</option>
+                </select>
             </div>
         </div>
 
@@ -1231,7 +1310,7 @@
 
         <div class="add-bar">
             <button class="icon-pill" id="optionsToggle" onclick="toggleAddOptions()" title="More options">⚙</button>
-            <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (#tag)" onkeydown="if(event.key==='Enter')addTodo()">
+            <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (try: tomorrow 5pm #home)" onkeydown="if(event.key==='Enter')addTodo()">
             <button class="add-btn" onclick="addTodo()">Add</button>
         </div>
 
@@ -1245,10 +1324,16 @@
             <button class="add-btn" onclick="createNote()" style="font-size:11px;">+ New</button>
         </div>
 
+        <div class="note-folder-bar" id="noteFolderBar"></div>
+
         <div class="content" id="noteList"></div>
         
         <div class="note-editor" id="noteEditor">
             <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
+            <div class="note-meta-row">
+                <select id="noteFolderSelect" onchange="onNoteFolderChange()" title="Folder"></select>
+                <input type="text" id="noteTagsInput" class="note-tags-input" placeholder="tags (comma separated)" oninput="onNoteTagsChange()" title="Comma-separated tags">
+            </div>
             <div class="format-toolbar" id="formatToolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:6px 8px; border-bottom:1px solid var(--border);">
                 <!-- Heading dropdown -->
                 <div class="fmt-dd" style="position:relative;">
@@ -1335,9 +1420,16 @@
             <div class="settings-row" style="margin-top:8px;">
                 <div>
                     <div class="label">Due reminders</div>
-                    <div class="sublabel">Desktop notification at 9 AM on a task's due day</div>
+                    <div class="sublabel">Desktop notification at a task's due time (or 9 AM if no time set)</div>
                 </div>
                 <div class="toggle-switch" id="remindersToggle" onclick="toggleRemindersSetting()"></div>
+            </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
+                    <div class="label">Updates</div>
+                    <div class="sublabel" id="updateStatusText">Version <span id="appVersionText">—</span></div>
+                </div>
+                <button class="filter-btn" id="checkUpdatesBtn" onclick="checkForUpdatesNow()">Check now</button>
             </div>
         </div>
         <div class="settings-section">
@@ -1345,9 +1437,10 @@
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button class="filter-btn" onclick="exportData()">⤓ Backup to file</button>
                 <button class="filter-btn" onclick="document.getElementById('importFile').click()">⤒ Restore from file</button>
+                <button class="filter-btn" onclick="openBackupsFolder()">📂 Auto-backups</button>
                 <button class="filter-btn delete-selected-btn" onclick="resetAllData()">↺ Reset to defaults</button>
             </div>
-            <div class="sublabel" style="margin-top:8px;">Backups include all tasks, notes, groups, sections & settings.</div>
+            <div class="sublabel" style="margin-top:8px;">Jot auto-saves a daily backup (keeps the last 7). Backups include all tasks, notes, groups, sections &amp; settings.</div>
         </div>
     </div>
 </div>
@@ -1375,20 +1468,51 @@
         <div class="context-sub-menu" id="ctxSectionMenu"></div>
     </div>
     <div class="separator"></div>
+    <div class="context-menu-item" onclick="ctxEditSchedule()">📅 Edit date / repeat</div>
     <div class="context-menu-item" id="ctxArchive" onclick="ctxToggleArchive()">🗄️ Archive</div>
     <div class="context-menu-item" onclick="ctxDuplicate()">📄 Duplicate</div>
     <div class="context-menu-item" onclick="ctxCopy()">📋 Copy Text</div>
     <div class="context-menu-item danger" onclick="ctxDelete()">🗑️ Delete</div>
 </div>
 
+<!-- Edit schedule (date / time / repeat) modal -->
+<div class="modal-overlay" id="scheduleModal" onclick="if(event.target===this)closeScheduleModal()">
+    <div class="modal-box">
+        <div class="modal-title">Edit date &amp; repeat</div>
+        <label class="modal-field">Due date
+            <input type="date" id="schedDate">
+        </label>
+        <label class="modal-field">Due time
+            <input type="time" id="schedTime">
+        </label>
+        <label class="modal-field">Repeat
+            <select id="schedRepeat">
+                <option value="none">No repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+            </select>
+        </label>
+        <div class="modal-actions">
+            <button class="filter-btn" onclick="clearSchedule()">Clear date</button>
+            <span style="flex:1;"></span>
+            <button class="filter-btn" onclick="closeScheduleModal()">Cancel</button>
+            <button class="add-btn" onclick="saveSchedule()">Save</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
+const APP_VERSION = '1.5.0';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
+let currentSort = 'manual';   // manual | due | priority | created | alpha
 let currentTab = 'todos';
 let editingNoteId = null;
+let currentNoteFolder = 'all';   // 'all' | '__none__' | folder name
 let contextTargetId = null;
 let appState = 'widget'; // 'widget', 'expanded', 'minimized'
 let multiSelectMode = false;
@@ -1401,13 +1525,47 @@ function loadData() {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
             const d = JSON.parse(saved);
-            if (!d.groups) d.groups = [];
-            if (!d.sections) d.sections = {};  // { groupName: [section1, section2, ...] }
-            if (!d.settings) d.settings = { theme: 'purple' };
-            return d;
+            return migrateData(d);
         }
     } catch(e) {}
-    return { todos: [], notes: [], groups: [], sections: {}, settings: { theme: 'purple' } };
+    return migrateData({});
+}
+
+// Normalize any loaded/imported data to the current model, filling defaults
+// for fields added over time so old backups never break the app.
+function migrateData(d) {
+    d = d && typeof d === 'object' ? d : {};
+    if (!Array.isArray(d.todos)) d.todos = [];
+    if (!Array.isArray(d.notes)) d.notes = [];
+    if (!Array.isArray(d.groups)) d.groups = [];
+    if (!d.sections || typeof d.sections !== 'object') d.sections = {};
+    if (!d.settings || typeof d.settings !== 'object') d.settings = { theme: 'purple' };
+    if (!d.settings.theme) d.settings.theme = 'purple';
+    // Task defaults
+    d.todos.forEach(t => {
+        if (typeof t.completed !== 'boolean') t.completed = false;
+        if (typeof t.wip !== 'boolean') t.wip = false;
+        if (typeof t.archived !== 'boolean') t.archived = false;
+        if (!Array.isArray(t.tags)) t.tags = [];
+        if (!Array.isArray(t.subtasks)) t.subtasks = [];
+        if (t.group == null) t.group = '';
+        if (t.section == null) t.section = '';
+        if (t.repeat == null) t.repeat = 'none';
+        if (t.dueDate === undefined) t.dueDate = null;
+        if (t.dueTime === undefined) t.dueTime = null;
+        if (!t.id) t.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    });
+    // Note defaults
+    d.notes.forEach(n => {
+        if (n.title == null) n.title = '';
+        if (n.body == null) n.body = '';
+        if (n.folder === undefined) n.folder = '';
+        if (!Array.isArray(n.tags)) n.tags = [];
+        if (!n.id) n.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    });
+    // Note folders list
+    if (!Array.isArray(d.noteFolders)) d.noteFolders = [];
+    return d;
 }
 
 function saveData() {
@@ -1426,6 +1584,22 @@ function syncReminders() {
 }
 
 // ===== BACKUP / RESTORE =====
+function openBackupsFolder() {
+    if (window.widgetAPI && window.widgetAPI.openBackupsFolder) {
+        window.widgetAPI.openBackupsFolder();
+    }
+}
+function checkForUpdatesNow() {
+    const btn = document.getElementById('checkUpdatesBtn');
+    const el = document.getElementById('updateStatusText');
+    if (!window.widgetAPI || !window.widgetAPI.checkForUpdates) {
+        if (el) el.textContent = 'Updates only work in the installed app';
+        return;
+    }
+    if (btn) btn.disabled = true;
+    if (el) el.textContent = 'Checking for updates…';
+    window.widgetAPI.checkForUpdates();
+}
 function exportData() {
     if (typeof guardBlur === 'function') guardBlur();
     const payload = JSON.stringify({ ...data, _exportedAt: new Date().toISOString(), _app: 'Jot', _v: 1 }, null, 2);
@@ -1451,11 +1625,7 @@ function importData(event) {
             const imported = JSON.parse(e.target.result);
             if (!imported.todos && !imported.notes) throw new Error('Not a Jot backup');
             if (!confirm('Restore this backup? It will replace your current tasks and notes.')) return;
-            data = {
-                todos: imported.todos || [],
-                notes: imported.notes || [],
-                groups: imported.groups || [],
-            };
+            data = migrateData(imported);
             saveData();
             refreshGroupSelectors();
             renderTodos();
@@ -1558,13 +1728,20 @@ function restoreApp() {
 
 // ===== BADGE =====
 function updateBadge() {
-    const active = data.todos.filter(t => !t.completed).length;
+    // Count open (not completed, not archived) tasks
+    const openTasks = data.todos.filter(t => !t.completed && !t.archived);
+    const active = openTasks.length;
     const badge = document.getElementById('badge');
     if (active > 0) {
-        badge.textContent = active > 9 ? '9+' : active;
+        badge.textContent = active > 99 ? '99+' : active;
         badge.classList.remove('hidden');
+        // Emphasize when something is due today or overdue
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const hasDue = openTasks.some(t => t.dueDate && t.dueDate <= todayStr);
+        badge.classList.toggle('badge-due', hasDue);
     } else {
         badge.classList.add('hidden');
+        badge.classList.remove('badge-due');
     }
 }
 
@@ -1611,7 +1788,116 @@ function setFilter(filter) {
     renderTodos();
 }
 
+function setSort(sort) {
+    currentSort = sort;
+    if (data.settings) data.settings.sort = sort;   // remember preference
+    saveData();
+    renderTodos();
+}
+
+// Sort a task array in place per currentSort. 'manual' leaves order as-is
+// (drag order from data.todos). Applied within each section by renderTodos.
+function sortTodosInPlace(arr) {
+    if (currentSort === 'manual') return;
+    const prioRank = { high: 0, medium: 1, low: 2, none: 3 };
+    // Stable sort via index tiebreaker
+    const withIdx = arr.map((t, i) => [t, i]);
+    withIdx.sort((A, B) => {
+        const a = A[0], b = B[0];
+        let cmp = 0;
+        if (currentSort === 'due') {
+            // Tasks with a due date first, earliest first; combine date+time
+            const av = a.dueDate ? (a.dueDate + 'T' + (a.dueTime || '23:59')) : null;
+            const bv = b.dueDate ? (b.dueDate + 'T' + (b.dueTime || '23:59')) : null;
+            if (av && bv) cmp = av < bv ? -1 : av > bv ? 1 : 0;
+            else if (av) cmp = -1;
+            else if (bv) cmp = 1;
+        } else if (currentSort === 'priority') {
+            cmp = (prioRank[a.priority || 'none'] - prioRank[b.priority || 'none']);
+        } else if (currentSort === 'created') {
+            const av = a.createdAt || '', bv = b.createdAt || '';
+            cmp = av < bv ? 1 : av > bv ? -1 : 0;   // newest first
+        } else if (currentSort === 'alpha') {
+            cmp = (a.text || '').localeCompare(b.text || '');
+        }
+        return cmp !== 0 ? cmp : (A[1] - B[1]);
+    });
+    for (let i = 0; i < withIdx.length; i++) arr[i] = withIdx[i][0];
+}
+
 // ===== TODOS =====
+// Parse natural-language date/time out of task text.
+// Returns { text, dueDate|null, dueTime|null } with recognized tokens removed.
+function parseNaturalSchedule(text) {
+    let dueDate = null, dueTime = null;
+    let s = ' ' + text + ' ';
+
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    const now = new Date();
+    const atMidnight = (d) => { d.setHours(0,0,0,0); return d; };
+
+    // --- TIME: "5pm", "5:30pm", "17:00", "at 9" ---
+    // 12-hour with am/pm
+    let m = s.match(/\b(at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    if (m) {
+        let h = parseInt(m[2], 10);
+        const min = m[3] ? parseInt(m[3], 10) : 0;
+        const ap = m[4].toLowerCase();
+        if (ap === 'pm' && h < 12) h += 12;
+        if (ap === 'am' && h === 12) h = 0;
+        if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+            dueTime = String(h).padStart(2,'0') + ':' + String(min).padStart(2,'0');
+            s = s.replace(m[0], ' ');
+        }
+    } else {
+        // 24-hour "17:00" or "at 17:00"
+        m = s.match(/\b(at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b/);
+        if (m) {
+            dueTime = String(parseInt(m[2],10)).padStart(2,'0') + ':' + m[3];
+            s = s.replace(m[0], ' ');
+        }
+    }
+
+    // --- DATE keywords ---
+    if (/\btoday\b/i.test(s)) {
+        dueDate = fmt(atMidnight(new Date()));
+        s = s.replace(/\btoday\b/i, ' ');
+    } else if (/\btomorrow\b/i.test(s)) {
+        const d = atMidnight(new Date()); d.setDate(d.getDate() + 1);
+        dueDate = fmt(d);
+        s = s.replace(/\btomorrow\b/i, ' ');
+    } else if (/\bnext week\b/i.test(s)) {
+        const d = atMidnight(new Date()); d.setDate(d.getDate() + 7);
+        dueDate = fmt(d);
+        s = s.replace(/\bnext week\b/i, ' ');
+    } else {
+        // weekday names → next occurrence of that weekday
+        const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        const wm = s.match(/\b(next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)\b/i);
+        if (wm) {
+            const token = wm[2].toLowerCase();
+            const map = { sun:0, mon:1, tue:2, tues:2, wed:3, thu:4, thur:4, thurs:4, fri:5, sat:6 };
+            let target = days.indexOf(token);
+            if (target === -1) target = map[token];
+            if (target != null && target >= 0) {
+                const d = atMidnight(new Date());
+                let delta = (target - d.getDay() + 7) % 7;
+                if (delta === 0) delta = 7;          // "monday" → the upcoming monday
+                if (wm[1]) delta += (delta <= 7 ? 0 : 0); // "next monday" handled same as upcoming
+                d.setDate(d.getDate() + delta);
+                dueDate = fmt(d);
+                s = s.replace(wm[0], ' ');
+            }
+        }
+    }
+
+    // If a time was given but no date, assume today
+    if (dueTime && !dueDate) dueDate = fmt(atMidnight(new Date()));
+
+    const cleaned = s.replace(/\s+/g, ' ').trim();
+    return { text: cleaned, dueDate, dueTime };
+}
+
 function addTodo() {
     const input = document.getElementById('todoInput');
     const text = input.value.trim();
@@ -1619,14 +1905,19 @@ function addTodo() {
 
     // Extract tags from text (e.g. #work #urgent)
     const tags = [];
-    const cleanText = text.replace(/#(\w+)/g, (_, tag) => {
+    let cleanText = text.replace(/#(\w+)/g, (_, tag) => {
         tags.push(tag.toLowerCase());
         return '';
     }).trim();
 
+    // Natural-language date/time parsing (e.g. "call Sam tomorrow 5pm")
+    const parsed = parseNaturalSchedule(cleanText);
+    cleanText = parsed.text;
+
     const priority = document.getElementById('prioritySelect').value;
-    const dueDate = document.getElementById('dueInput').value || null;
-    const dueTime = document.getElementById('dueTimeInput').value || null;
+    // Explicit date/time pickers take precedence over parsed values.
+    const dueDate = (document.getElementById('dueInput').value || null) || parsed.dueDate;
+    const dueTime = (document.getElementById('dueTimeInput').value || null) || parsed.dueTime;
     const repeat = document.getElementById('repeatSelect').value || 'none';
 
     // Group: use the explicit choice from the options dropdown if set;
@@ -1647,6 +1938,7 @@ function addTodo() {
         text: cleanText || text,
         completed: false,
         wip: false,
+        archived: false,
         priority: priority,
         tags: tags,
         group: group,
@@ -1654,6 +1946,7 @@ function addTodo() {
         dueDate: dueDate,
         dueTime: dueTime,
         repeat: repeat,
+        subtasks: [],
         createdAt: new Date().toISOString(),
     });
 
@@ -1870,11 +2163,16 @@ function spawnNextOccurrence(todo) {
         text: todo.text,
         completed: false,
         wip: false,
+        archived: false,
         priority: todo.priority,
         tags: [...(todo.tags || [])],
         group: todo.group || '',
+        section: todo.section || '',
         dueDate: nextDue,
+        dueTime: todo.dueTime || null,
         repeat: todo.repeat,
+        // carry the checklist structure but reset completion state
+        subtasks: (todo.subtasks || []).map(s => ({ text: s.text, done: false })),
         createdAt: new Date().toISOString(),
     });
     showToast('↻ Next occurrence scheduled for ' + formatDate(nextDue), null);
@@ -1967,6 +2265,11 @@ function renderTodos() {
         if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
         return true;
     });
+
+    // Apply the chosen sort. Grouping below preserves array order, so sorting
+    // the flat list here effectively sorts tasks WITHIN each section, leaving
+    // the section/group structure untouched. 'manual' keeps drag order.
+    sortTodosInPlace(todos);
 
     const container = document.getElementById('todoList');
     container.classList.toggle('multi-select-mode', multiSelectMode);
@@ -2646,9 +2949,12 @@ function openNoteEditor(id) {
 
     document.getElementById('noteList').style.display = 'none';
     document.querySelector('#tab-notes .toolbar').style.display = 'none';
+    { const fb = document.getElementById('noteFolderBar'); if (fb) fb.style.display = 'none'; }
     const editor = document.getElementById('noteEditor');
     editor.classList.add('active');
     document.getElementById('noteTitle').value = note.title;
+    populateNoteFolderSelect(note);
+    document.getElementById('noteTagsInput').value = (note.tags || []).join(', ');
     // Load HTML body into the contenteditable div. Migrate old plain-text notes.
     const bodyEl = document.getElementById('noteBody');
     bodyEl.innerHTML = note.bodyHtml != null ? note.bodyHtml : escapeHtml(note.body || '').replace(/\n/g, '<br>');
@@ -2664,6 +2970,7 @@ function closeNoteEditor() {
     document.getElementById('noteEditor').classList.remove('active');
     document.getElementById('noteList').style.display = '';
     document.querySelector('#tab-notes .toolbar').style.display = '';
+    { const fb = document.getElementById('noteFolderBar'); if (fb) fb.style.display = ''; }
     renderNotes();
 }
 
@@ -3026,10 +3333,102 @@ function queryState(cmd) {
     try { return document.queryCommandState(cmd); } catch (e) { return false; }
 }
 
+// Collect all folders that exist (from data.noteFolders + any used on notes)
+function allNoteFolders() {
+    const set = new Set(data.noteFolders || []);
+    (data.notes || []).forEach(n => { if (n.folder) set.add(n.folder); });
+    return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function renderNoteFolderBar() {
+    const bar = document.getElementById('noteFolderBar');
+    if (!bar) return;
+    const folders = allNoteFolders();
+    const hasUnfiled = (data.notes || []).some(n => !n.folder);
+    let html = `<button class="note-folder-pill ${currentNoteFolder === 'all' ? 'active' : ''}" onclick="setNoteFolder('all')">All</button>`;
+    if (hasUnfiled) {
+        html += `<button class="note-folder-pill ${currentNoteFolder === '__none__' ? 'active' : ''}" onclick="setNoteFolder('__none__')">Unfiled</button>`;
+    }
+    folders.forEach((f, i) => {
+        html += `<button class="note-folder-pill ${currentNoteFolder === f ? 'active' : ''}" onclick="setNoteFolderByIndex(${i})">📁 ${escapeHtml(f)}</button>`;
+    });
+    html += `<button class="note-folder-pill" onclick="createNoteFolder()" title="New folder">＋</button>`;
+    bar.innerHTML = html;
+}
+
+function setNoteFolderByIndex(i) {
+    const folders = allNoteFolders();
+    if (i >= 0 && i < folders.length) setNoteFolder(folders[i]);
+}
+
+function setNoteFolder(f) {
+    currentNoteFolder = f;
+    renderNotes();
+}
+
+function createNoteFolder() {
+    const name = (prompt('New folder name:') || '').trim();
+    if (!name) return;
+    if (!data.noteFolders) data.noteFolders = [];
+    if (!data.noteFolders.includes(name)) data.noteFolders.push(name);
+    saveData();
+    currentNoteFolder = name;
+    renderNotes();
+}
+
+// Populate the editor's folder <select> for the given note
+function populateNoteFolderSelect(note) {
+    const sel = document.getElementById('noteFolderSelect');
+    if (!sel) return;
+    const folders = allNoteFolders();
+    let html = `<option value="">No folder</option>`;
+    folders.forEach(f => {
+        html += `<option value="${escapeAttr(f)}" ${note.folder === f ? 'selected' : ''}>${escapeHtml(f)}</option>`;
+    });
+    html += `<option value="__new__">＋ New folder…</option>`;
+    sel.innerHTML = html;
+    sel.value = note.folder || '';
+}
+
+function onNoteFolderChange() {
+    const note = data.notes.find(n => n.id === editingNoteId);
+    if (!note) return;
+    const sel = document.getElementById('noteFolderSelect');
+    if (sel.value === '__new__') {
+        const name = (prompt('New folder name:') || '').trim();
+        if (name) {
+            if (!data.noteFolders) data.noteFolders = [];
+            if (!data.noteFolders.includes(name)) data.noteFolders.push(name);
+            note.folder = name;
+        }
+        populateNoteFolderSelect(note);
+    } else {
+        note.folder = sel.value || '';
+    }
+    note.updatedAt = new Date().toISOString();
+    saveData();
+}
+
+function onNoteTagsChange() {
+    const note = data.notes.find(n => n.id === editingNoteId);
+    if (!note) return;
+    const raw = document.getElementById('noteTagsInput').value;
+    note.tags = raw.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean);
+    note.updatedAt = new Date().toISOString();
+    saveData();
+}
+
 function renderNotes() {
     const search = document.getElementById('searchNotes').value.toLowerCase();
+    renderNoteFolderBar();
     let notes = data.notes.filter(n => {
-        if (search && !(n.title || '').toLowerCase().includes(search) && !(n.body || '').toLowerCase().includes(search)) return false;
+        // Folder filter
+        if (currentNoteFolder === '__none__' && (n.folder || '')) return false;
+        if (currentNoteFolder !== 'all' && currentNoteFolder !== '__none__' && (n.folder || '') !== currentNoteFolder) return false;
+        if (search &&
+            !(n.title || '').toLowerCase().includes(search) &&
+            !(n.body || '').toLowerCase().includes(search) &&
+            !((n.tags || []).some(tag => tag.toLowerCase().includes(search)))) return false;
         return true;
     });
 
@@ -3048,6 +3447,10 @@ function renderNotes() {
                 <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note">✕</button>
                 <div class="note-title">${escapeHtml(n.title) || 'Untitled'}</div>
                 <div class="note-preview">${escapeHtml((n.body || '').substring(0, 80)) || 'Empty note…'}</div>
+                ${(n.folder || (n.tags && n.tags.length)) ? `<div class="note-card-tags">
+                    ${n.folder ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">📁 ${escapeHtml(n.folder)}</span>` : ''}
+                    ${(n.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${escapeHtml(tag)}</span>`).join('')}
+                </div>` : ''}
                 <div class="note-footer">
                     <span class="todo-date">${timeAgo(n.updatedAt)}</span>
                     <span class="todo-date">${(n.body || '').split(/\s+/).filter(w=>w).length} words</span>
@@ -3215,6 +3618,42 @@ function ctxToggleArchive() {
         renderTodos();
     }
     hideContextMenu();
+}
+
+// ===== EDIT SCHEDULE (date / time / repeat) =====
+let scheduleTargetId = null;
+function ctxEditSchedule() {
+    scheduleTargetId = contextTargetId;
+    hideContextMenu();
+    const todo = data.todos.find(t => t.id === scheduleTargetId);
+    if (!todo) return;
+    document.getElementById('schedDate').value = todo.dueDate || '';
+    document.getElementById('schedTime').value = todo.dueTime || '';
+    document.getElementById('schedRepeat').value = todo.repeat || 'none';
+    if (typeof guardBlur === 'function') guardBlur();
+    document.getElementById('scheduleModal').classList.add('active');
+}
+function closeScheduleModal() {
+    document.getElementById('scheduleModal').classList.remove('active');
+    scheduleTargetId = null;
+}
+function clearSchedule() {
+    document.getElementById('schedDate').value = '';
+    document.getElementById('schedTime').value = '';
+}
+function saveSchedule() {
+    const todo = data.todos.find(t => t.id === scheduleTargetId);
+    if (!todo) { closeScheduleModal(); return; }
+    const date = document.getElementById('schedDate').value || null;
+    const time = document.getElementById('schedTime').value || null;
+    const repeat = document.getElementById('schedRepeat').value || 'none';
+    todo.dueDate = date;
+    todo.dueTime = date ? time : null;   // time only meaningful with a date
+    todo.repeat = repeat;
+    saveData();
+    renderTodos();
+    closeScheduleModal();
+    showToast('Schedule updated', null);
 }
 
 function toggleCtxGroupMenu() {
@@ -3428,6 +3867,16 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// Escape a string for safe use inside a single-quoted HTML attribute / JS string
+function escapeAttr(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/'/g, '&#39;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function formatTime(t) {
     // t is "HH:MM" 24h → format to 12h with am/pm
     if (!t || !/^\d{1,2}:\d{2}/.test(t)) return t || '';
@@ -3548,6 +3997,8 @@ function renderSettings() {
     // Theme swatches
     const grid = document.getElementById('themeGrid');
     const current = (data.settings && data.settings.theme) || 'purple';
+    const verEl = document.getElementById('appVersionText');
+    if (verEl) verEl.textContent = APP_VERSION;
     grid.innerHTML = Object.entries(THEMES).map(([key, t]) => `
         <div class="theme-swatch ${key === current ? 'active' : ''}" onclick="setTheme('${key}')">
             <div class="theme-preview" style="background:${t.bg};">
@@ -3611,7 +4062,7 @@ function applyCustomAccent(color) {
 // Reset everything to defaults (with confirmation)
 function resetAllData() {
     if (!confirm('Reset Jot to defaults? This permanently deletes ALL tasks, notes, groups, and sections. Consider backing up first.')) return;
-    data = { todos: [], notes: [], groups: [], sections: {}, settings: { theme: 'purple' } };
+    data = migrateData({});
     selectedIds.clear();
     collapsedSections.clear();
     saveData();
@@ -3692,6 +4143,12 @@ if (data.settings && data.settings.theme === 'custom' && data.settings.customAcc
 }
 refreshGroupSelectors();
 refreshSectionSelect();
+// Restore saved sort preference
+if (data.settings && data.settings.sort) {
+    currentSort = data.settings.sort;
+    const ss = document.getElementById('sortSelect');
+    if (ss) ss.value = currentSort;
+}
 updateBadge();
 
 // Safety net: persist data if the window is ever closed/reloaded
@@ -3772,10 +4229,16 @@ if (window.widgetAPI) {
     // Startup toggle now lives in the Settings panel (titlebar button hidden)
 
     // Daily auto-backup — main process only writes once per day
-    try {
-        const payload = JSON.stringify({ ...data, _app: 'Jot', _v: 1, _auto: true });
-        window.widgetAPI.autoBackup(payload);
-    } catch (e) {}
+    function doAutoBackup() {
+        try {
+            const payload = JSON.stringify({ ...data, _app: 'Jot', _v: 1, _auto: true });
+            window.widgetAPI.autoBackup(payload);
+        } catch (e) {}
+    }
+    doAutoBackup();
+    // Retry every 6 hours so a session that stays open past midnight still
+    // produces that day's backup (main process de-dupes to once per day).
+    setInterval(doAutoBackup, 6 * 60 * 60 * 1000);
 
     // Click-away → collapse to widget (unless a dialog is open or editing a note)
     if (window.widgetAPI.onCollapseOnBlur) {
@@ -3797,6 +4260,24 @@ if (window.widgetAPI) {
             expandApp();
             switchTab('todos');
             setTimeout(() => { const i = document.getElementById('todoInput'); if (i) i.focus(); }, 150);
+        });
+    }
+    // Update status feedback
+    if (window.widgetAPI.onUpdateStatus) {
+        window.widgetAPI.onUpdateStatus((status) => {
+            const el = document.getElementById('updateStatusText');
+            const btn = document.getElementById('checkUpdatesBtn');
+            if (!el) return;
+            const map = {
+                checking: 'Checking for updates…',
+                available: 'Update found — downloading…',
+                downloaded: 'Update ready — restart to apply',
+                none: 'You’re up to date',
+                dev: 'Updates only work in the installed app',
+                error: 'Update check failed',
+            };
+            el.textContent = map[status.state] || '';
+            if (btn && status.state !== 'checking') btn.disabled = false;
         });
     }
 

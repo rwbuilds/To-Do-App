@@ -24,7 +24,13 @@ let lastExpandedBounds = null; // remember where/what size the expanded window l
 let remindersEnabled = false;
 let reminderTasks = [];          // [{ id, text, dueDate, completed }]
 const notifiedTaskIds = new Set();
+const snoozeUntil = new Map();   // taskId -> epoch ms; suppress notifications until then
 let reminderTimer = null;
+
+function snoozeTask(id, minutes) {
+  snoozeUntil.set(id, Date.now() + minutes * 60 * 1000);
+  notifiedTaskIds.delete(id);    // allow it to fire again after the snooze
+}
 
 function checkReminders() {
   if (!remindersEnabled) return;
@@ -33,17 +39,31 @@ function checkReminders() {
   reminderTasks.forEach(t => {
     if (!t.dueDate || t.completed) return;
     if (notifiedTaskIds.has(t.id)) return;
+    // Respect an active snooze
+    const snz = snoozeUntil.get(t.id);
+    if (snz && Date.now() < snz) return;
     const tm = (t.dueTime && /^\d{1,2}:\d{2}/.test(t.dueTime))
       ? (t.dueTime.length === 5 ? t.dueTime + ':00' : t.dueTime)
       : '09:00:00';
     const due = new Date(t.dueDate + 'T' + tm);
     if (now >= due) {
       notifiedTaskIds.add(t.id);
+      snoozeUntil.delete(t.id);
       try {
         const n = new Notification({
           title: 'Jot — Task due',
           body: t.text,
           silent: false,
+          // Action buttons (supported on Windows/macOS; ignored where unsupported)
+          actions: [
+            { type: 'button', text: 'Snooze 30 min' },
+            { type: 'button', text: 'Snooze 1 hour' },
+          ],
+        });
+        // action index 0 = 30 min, 1 = 1 hour
+        n.on('action', (event, index) => {
+          if (index === 0) snoozeTask(t.id, 30);
+          else if (index === 1) snoozeTask(t.id, 60);
         });
         n.on('click', () => { showWindow(); if (mainWindow) mainWindow.webContents.send('focus-task', t.id); });
         n.show();
@@ -628,6 +648,9 @@ ipcMain.on('sync-reminders', (event, tasks) => {
   for (const id of [...notifiedTaskIds]) {
     if (!validIds.has(id)) notifiedTaskIds.delete(id);
   }
+  for (const id of [...snoozeUntil.keys()]) {
+    if (!validIds.has(id)) snoozeUntil.delete(id);
+  }
   checkReminders();
 });
 
@@ -637,8 +660,30 @@ ipcMain.on('set-reminders', (event, enabled) => {
   else if (reminderTimer) { clearInterval(reminderTimer); reminderTimer = null; }
 });
 
+// Manual "Check for updates now". Only meaningful in packaged builds where
+// update-electron-app has configured the feed. Reports back via 'update-status'.
+ipcMain.on('check-for-updates', (event) => {
+  const send = (s) => { if (mainWindow) mainWindow.webContents.send('update-status', s); };
+  if (!app.isPackaged) {
+    send({ state: 'dev' });   // updates only work in the installed app
+    return;
+  }
+  try {
+    send({ state: 'checking' });
+    require('electron').autoUpdater.checkForUpdates();
+  } catch (e) {
+    send({ state: 'error', message: String(e) });
+  }
+});
+
 // ===== APP LIFECYCLE =====
 app.whenReady().then(() => {
+  // Windows needs an explicit AppUserModelID for toast notifications and their
+  // action buttons (Snooze) to render/route correctly.
+  if (process.platform === 'win32') {
+    try { app.setAppUserModelId('com.rwbuilds.jot'); } catch (e) {}
+  }
+
   createWindow();
   createTray();
 
@@ -649,6 +694,22 @@ app.whenReady().then(() => {
       require('update-electron-app').updateElectronApp({
         updateInterval: '1 hour',
         notifyUser: true,
+      });
+      // Relay updater status to the renderer so a manual "Check for updates"
+      // button can show feedback. update-electron-app has already configured
+      // the feed URL on the built-in autoUpdater.
+      const { autoUpdater } = require('electron');
+      autoUpdater.on('update-available', () => {
+        if (mainWindow) mainWindow.webContents.send('update-status', { state: 'available' });
+      });
+      autoUpdater.on('update-not-available', () => {
+        if (mainWindow) mainWindow.webContents.send('update-status', { state: 'none' });
+      });
+      autoUpdater.on('update-downloaded', () => {
+        if (mainWindow) mainWindow.webContents.send('update-status', { state: 'downloaded' });
+      });
+      autoUpdater.on('error', (err) => {
+        if (mainWindow) mainWindow.webContents.send('update-status', { state: 'error', message: String(err) });
       });
     } catch (e) { console.error('auto-update init failed:', e); }
   }

@@ -26,4 +26,6 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   setReminders: (enabled) => ipcRenderer.send('set-reminders', enabled),
   onFocusTask: (cb) => ipcRenderer.on('focus-task', (e, id) => cb(id)),
   openExternal: (url) => ipcRenderer.send('open-external', url),
+  checkForUpdates: () => ipcRenderer.send('check-for-updates'),
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (e, status) => cb(status)),
 });
