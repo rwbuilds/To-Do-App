@@ -1564,10 +1564,25 @@
     </div>
 </div>
 
+<!-- Generic text prompt modal (replaces window.prompt, which Electron blocks) -->
+<div class="modal-overlay" id="promptModal" onclick="if(event.target===this)closePromptModal()">
+    <div class="modal-box">
+        <div class="modal-title" id="promptTitle">Enter a value</div>
+        <label class="modal-field">
+            <input type="text" id="promptInput" onkeydown="if(event.key==='Enter')confirmPrompt(); if(event.key==='Escape')closePromptModal();">
+        </label>
+        <div class="modal-actions">
+            <span style="flex:1;"></span>
+            <button class="filter-btn" onclick="closePromptModal()">Cancel</button>
+            <button class="add-btn" onclick="confirmPrompt()">OK</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.5.2';   // keep in sync with package.json
+const APP_VERSION = '1.5.3';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -3652,8 +3667,8 @@ function setNoteFolder(f) {
     renderNotes();
 }
 
-function createNoteFolder() {
-    const name = (prompt('New folder name:') || '').trim();
+async function createNoteFolder() {
+    const name = (await showPrompt('New folder name:') || '').trim();
     if (!name) return;
     if (!data.noteFolders) data.noteFolders = [];
     if (!data.noteFolders.includes(name)) data.noteFolders.push(name);
@@ -3676,12 +3691,12 @@ function populateNoteFolderSelect(note) {
     sel.value = note.folder || '';
 }
 
-function onNoteFolderChange() {
+async function onNoteFolderChange() {
     const note = data.notes.find(n => n.id === editingNoteId);
     if (!note) return;
     const sel = document.getElementById('noteFolderSelect');
     if (sel.value === '__new__') {
-        const name = (prompt('New folder name:') || '').trim();
+        const name = (await showPrompt('New folder name:') || '').trim();
         if (name) {
             if (!data.noteFolders) data.noteFolders = [];
             if (!data.noteFolders.includes(name)) data.noteFolders.push(name);
@@ -3693,6 +3708,7 @@ function onNoteFolderChange() {
     }
     note.updatedAt = new Date().toISOString();
     saveData();
+    renderNoteFolderBar();
 }
 
 function onNoteTagsChange() {
@@ -4161,6 +4177,32 @@ function escapeAttr(str) {
         .replace(/"/g, '&quot;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+}
+
+// In-app replacement for window.prompt (which Electron BrowserWindows block).
+// Returns a Promise resolving to the trimmed string, or null if cancelled.
+let _promptResolve = null;
+function showPrompt(title, initial) {
+    return new Promise((resolve) => {
+        _promptResolve = resolve;
+        const modal = document.getElementById('promptModal');
+        document.getElementById('promptTitle').textContent = title || 'Enter a value';
+        const input = document.getElementById('promptInput');
+        input.value = initial || '';
+        if (typeof guardBlur === 'function') guardBlur();
+        modal.classList.add('active');
+        setTimeout(() => { input.focus(); input.select(); }, 30);
+    });
+}
+function confirmPrompt() {
+    const val = document.getElementById('promptInput').value.trim();
+    closePromptModal(val || null);
+}
+function closePromptModal(result) {
+    document.getElementById('promptModal').classList.remove('active');
+    const r = _promptResolve;
+    _promptResolve = null;
+    if (r) r(result === undefined ? null : result);
 }
 
 function formatTime(t) {
