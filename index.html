@@ -197,6 +197,7 @@
         body.widget-mode #app,
         body.widget-mode #undoToast,
         body.widget-mode #contextMenu,
+        body.widget-mode #updateBanner,
         body.widget-mode #taskbar-btn { display: none !important; }
         body.electron .content { max-height: none; flex: 1; min-height: 0; }
         /* Tab panels fill the window so content scrolls and the add bar stays pinned */
@@ -1300,7 +1301,7 @@
                 <button class="filter-btn" id="filterAll" onclick="setFilter('all')">All</button>
                 <button class="filter-btn" id="filterActive" onclick="setFilter('active')">Active</button>
                 <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
-                <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
+                <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Completed</button>
                 <button class="filter-btn" id="filterArchived" onclick="setFilter('archived')">Archived</button>
                 <div style="flex:1;"></div>
                 <select id="sortSelect" class="sort-select" title="Sort tasks within each section" onchange="setSort(this.value)">
@@ -1480,8 +1481,8 @@
             </div>
             <div class="settings-row" style="margin-top:8px;">
                 <div>
-                    <div class="label">Updates</div>
-                    <div class="sublabel" id="updateStatusText">Version <span id="appVersionText">—</span></div>
+                    <div class="label">Version <span id="appVersionText">—</span></div>
+                    <div class="sublabel" id="updateStatusText">Check for the latest version</div>
                 </div>
                 <button class="filter-btn" id="checkUpdatesBtn" onclick="checkForUpdatesNow()">Check now</button>
             </div>
@@ -1582,7 +1583,7 @@
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.5.3';   // keep in sync with package.json
+const APP_VERSION = '1.5.7';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -1655,7 +1656,7 @@ function saveData() {
 function syncReminders() {
     if (!window.widgetAPI || !window.widgetAPI.syncReminders) return;
     const due = data.todos
-        .filter(t => t.dueDate && !t.completed)
+        .filter(t => t.dueDate && !t.completed && !t.archived)
         .map(t => ({ id: t.id, text: t.text, dueDate: t.dueDate, dueTime: t.dueTime || null, completed: t.completed }));
     window.widgetAPI.syncReminders(due);
 }
@@ -1891,6 +1892,7 @@ function setFilter(filter) {
     document.getElementById('filterWip').classList.toggle('active', filter === 'wip');
     document.getElementById('filterDone').classList.toggle('active', filter === 'done');
     document.getElementById('filterArchived').classList.toggle('active', filter === 'archived');
+    if (data.settings) data.settings.filter = filter;   // remember across restarts
     renderTodos();
 }
 
@@ -2484,6 +2486,9 @@ function renderTodos() {
         });
 
         let html = '';
+        // In Completed/Archived views, only show sections/groups that actually
+        // contain matching tasks — empty section headers would just be clutter.
+        const hideEmptySections = (currentFilter === 'done' || currentFilter === 'archived');
         // Grouped sections first (in group order) — but NOT when viewing Ungrouped tab
         if (groupFilter !== '__none__') {
             data.groups.forEach(g => {
@@ -2491,8 +2496,10 @@ function renderTodos() {
                 if (groupFilter !== 'all' && g !== groupFilter) return;
                 const groupTasks = grouped[g] || [];
                 const sections = data.sections[g] || [];
-                // Show the group if it has tasks OR sections defined
-                if (groupTasks.length || sections.length) {
+                // Show the group if it has tasks OR sections defined.
+                // In Completed/Archived, require actual tasks (no empty group headers).
+                const showGroup = hideEmptySections ? groupTasks.length > 0 : (groupTasks.length || sections.length);
+                if (showGroup) {
                     html += renderGroupHeader(g, groupTasks.length);
                     // Sub-group by section within this group
                     const sectionedTasks = {};
@@ -2515,9 +2522,11 @@ function renderTodos() {
                     } else {
                         html += unsectioned.map(renderTodoItem).join('');
                     }
-                    // Then each section — ALWAYS show, even if empty
+                    // Each section: normally always shown (so you can drop tasks in),
+                    // but hidden when empty in Completed/Archived views.
                     sections.forEach(sec => {
                         const count = sectionedTasks[sec] ? sectionedTasks[sec].length : 0;
+                        if (hideEmptySections && count === 0) return;   // skip empty sections here
                         html += renderSectionHeader(g, sec, count);
                         const secKey = g + ':' + sec;
                         if (count > 0 && !collapsedSections.has(secKey)) {
@@ -2549,11 +2558,12 @@ function renderTodos() {
         }
     }
 
-    // Stats
-    const total = data.todos.length;
-    const done = data.todos.filter(t => t.completed).length;
-    const wip = data.todos.filter(t => t.wip).length;
-    const overdue = data.todos.filter(t => t.dueDate && !t.completed && new Date(t.dueDate) < new Date()).length;
+    // Stats (exclude archived tasks — they're put away, not active)
+    const activeTodos = data.todos.filter(t => !t.archived);
+    const total = activeTodos.length;
+    const done = activeTodos.filter(t => t.completed).length;
+    const wip = activeTodos.filter(t => t.wip).length;
+    const overdue = activeTodos.filter(t => t.dueDate && !t.completed && new Date(t.dueDate) < new Date()).length;
     document.getElementById('todoStats').innerHTML = `
         <span>${done}/${total} done · ${wip} WIP</span>
         <span>${overdue > 0 ? `⚠️ ${overdue} overdue` : '✓ All on track'}</span>
@@ -4422,7 +4432,9 @@ function renderAll() {
     renderTodos();
     renderNotes();
     updateBadge();
-    setFilter('all');
+    // Re-apply the current filter (keeps the active pill in sync) instead of
+    // resetting to 'all' — so reopening the app preserves the chosen filter.
+    setFilter(currentFilter);
 }
 
 // ===== INIT =====
@@ -4477,7 +4489,13 @@ if (data.settings && data.settings.sort) {
     const ss = document.getElementById('sortSelect');
     if (ss) ss.value = currentSort;
 }
+// Restore saved filter (falls back to 'all')
+if (data.settings && data.settings.filter) {
+    currentFilter = data.settings.filter;
+}
 updateBadge();
+// Always show the app version in Settings (independent of update checks)
+{ const vEl = document.getElementById('appVersionText'); if (vEl) vEl.textContent = APP_VERSION; }
 
 // Safety net: persist data if the window is ever closed/reloaded
 window.addEventListener('beforeunload', () => {
