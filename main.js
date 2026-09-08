@@ -134,7 +134,7 @@ function createWindow() {
     height: WIDGET_SIZE.height,
     frame: false,              // no OS title bar — we draw our own
     transparent: true,         // allows the rounded/transparent widget
-    resizable: false,          // never OS-resizable (we resize via a custom grip)
+    resizable: false,          // starts as widget (fixed size); enabled when expanded
     maximizable: false,        // block OS maximize (double-click / snap-maximize)
     fullscreenable: false,
     alwaysOnTop: true,         // real always-on-top
@@ -223,7 +223,9 @@ function createWindow() {
   // Persist expanded size when the user resizes (debounced)
   let resizeSaveTimer = null;
   mainWindow.on('resize', () => {
-    if (mainWindow.isResizable()) {
+    // Only while expanded (resizable) and NOT during a titlebar drag (which
+    // pins size via dragLockSize) — otherwise we'd save a transient size.
+    if (mainWindow.isResizable() && !dragLockSize) {
       const [w, h] = mainWindow.getSize();
       EXPANDED_SIZE.width = w;
       EXPANDED_SIZE.height = h;
@@ -394,7 +396,7 @@ ipcMain.on('resize-window', (event, state) => {
     isExpanded = true;
     snapSuppressUntil = Date.now() + 600; // don't snap right after expanding
 
-    mainWindow.setResizable(false);
+    mainWindow.setResizable(true);   // allow OS edge/corner resizing while expanded
     mainWindow.setMinimumSize(MIN_EXPANDED.width, MIN_EXPANDED.height);
 
     // If we have a remembered expanded position/size and it's still on-screen, restore it
@@ -507,7 +509,7 @@ ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
     }
   } catch (e) { return; }
   // In widget mode, track the anchor in memory (persisted on drag-end, not every frame)
-  if (!mainWindow.isResizable()) {
+  if (!isExpanded) {
     widgetAnchor = { x: nx, y: ny };
   }
 });
@@ -676,6 +678,14 @@ ipcMain.on('check-for-updates', (event) => {
   }
 });
 
+// Apply a downloaded update by quitting and installing (Squirrel).
+ipcMain.on('restart-to-update', () => {
+  try {
+    app.isQuitting = true;
+    require('electron').autoUpdater.quitAndInstall();
+  } catch (e) { /* no update staged */ }
+});
+
 // ===== APP LIFECYCLE =====
 app.whenReady().then(() => {
   // Windows needs an explicit AppUserModelID for toast notifications and their
@@ -693,7 +703,7 @@ app.whenReady().then(() => {
     try {
       require('update-electron-app').updateElectronApp({
         updateInterval: '1 hour',
-        notifyUser: true,
+        notifyUser: false,   // we present a subtle in-app banner instead
       });
       // Relay updater status to the renderer so a manual "Check for updates"
       // button can show feedback. update-electron-app has already configured
@@ -709,7 +719,15 @@ app.whenReady().then(() => {
         if (mainWindow) mainWindow.webContents.send('update-status', { state: 'downloaded' });
       });
       autoUpdater.on('error', (err) => {
-        if (mainWindow) mainWindow.webContents.send('update-status', { state: 'error', message: String(err) });
+        const msg = String(err && err.message ? err.message : err);
+        // Windows Squirrel fires 'error' (not 'update-not-available') when the
+        // feed has nothing newer. Treat those benign cases as "up to date"
+        // rather than a scary "failed". Genuine failures still surface.
+        const benign = /no update available|update-?not-?available|Can not find Squirrel|no published versions|404|dependent'?s? nupkg/i.test(msg);
+        if (mainWindow) {
+          mainWindow.webContents.send('update-status',
+            benign ? { state: 'none' } : { state: 'error', message: msg });
+        }
       });
     } catch (e) { console.error('auto-update init failed:', e); }
   }

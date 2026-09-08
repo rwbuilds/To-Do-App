@@ -27,5 +27,6 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   onFocusTask: (cb) => ipcRenderer.on('focus-task', (e, id) => cb(id)),
   openExternal: (url) => ipcRenderer.send('open-external', url),
   checkForUpdates: () => ipcRenderer.send('check-for-updates'),
+  restartToUpdate: () => ipcRenderer.send('restart-to-update'),
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (e, status) => cb(status)),
 });

@@ -40,6 +40,55 @@
         .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
         body.electron .titlebar { cursor: grab; }
 
+        /* Update banner */
+        .update-banner {
+            position: fixed;
+            left: 12px; right: 12px; bottom: 12px;
+            background: var(--surface);
+            border: 1px solid var(--accent);
+            border-radius: 10px;
+            padding: 10px 12px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            z-index: 100001;
+            font-size: 12px;
+            animation: bannerSlideUp 0.25s ease;
+        }
+        .update-banner.show { display: flex; }
+        @keyframes bannerSlideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .update-banner-icon { font-size: 15px; }
+        .update-banner-text { flex: 1; color: var(--text); }
+        .update-banner-action {
+            background: var(--accent); color: #fff; border: none;
+            border-radius: 6px; padding: 5px 12px; font-size: 12px;
+            font-weight: 600; cursor: pointer;
+        }
+        .update-banner-action:hover { opacity: 0.9; }
+        .update-banner-action.hidden { display: none; }
+        .update-banner-close {
+            background: none; border: none; color: var(--text-dim);
+            cursor: pointer; font-size: 12px; padding: 2px 4px;
+        }
+        .update-banner-close:hover { color: var(--text); }
+
+        /* Natural-language parse preview chip */
+        .parse-preview {
+            padding: 4px 12px 0;
+            display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+        }
+        .parse-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: rgba(124,92,252,0.15); color: var(--accent);
+            border: 1px solid rgba(124,92,252,0.35);
+            border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600;
+        }
+        .parse-chip.tag-chip { background: var(--surface-hover); color: var(--text-dim); border-color: var(--border); }
+
         /* Sort dropdown */
         .sort-select {
             background: var(--bg); color: var(--text-dim);
@@ -134,8 +183,10 @@
         /* Electron: window itself is sized to content, so anchor top-left */
         body.electron #widget { top: 0; left: 0; right: auto; width: 56px; height: 56px; margin: 0; cursor: grab; }
         body.electron #app {
-            top: 0; left: 0; right: auto; width: 100%;
-            max-height: 100vh; height: 100vh; border-radius: 12px;
+            top: 3px; left: 3px; right: 3px; bottom: 3px;
+            width: auto; height: auto;
+            max-height: none;
+            border-radius: 12px;
             background: var(--bg);           /* solid, opaque */
             opacity: 1;
             box-shadow: none;
@@ -1310,9 +1361,11 @@
 
         <div class="add-bar">
             <button class="icon-pill" id="optionsToggle" onclick="toggleAddOptions()" title="More options">⚙</button>
-            <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (try: tomorrow 5pm #home)" onkeydown="if(event.key==='Enter')addTodo()">
+            <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (try: tomorrow 5pm #home)" oninput="updateParsePreview()" onkeydown="if(event.key==='Enter')addTodo()">
             <button class="add-btn" onclick="addTodo()">Add</button>
         </div>
+
+        <div class="parse-preview" id="parsePreview" style="display:none;"></div>
 
         <div class="stats-bar" id="todoStats"></div>
     </div>
@@ -1388,7 +1441,8 @@
                  onblur="linkifyEditor(); saveCurrentNote();"></div>
             <div class="add-bar">
                 <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
-                <button class="filter-btn" onclick="exportCurrentNote()" title="Export this note">⇩ Export</button>
+                <button class="filter-btn" onclick="exportCurrentNote('txt')" title="Export as plain text">⇩ .txt</button>
+                <button class="filter-btn" onclick="exportCurrentNote('md')" title="Export as Markdown (keeps formatting)">⇩ .md</button>
                 <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 words</span>
                 <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
             </div>
@@ -1451,6 +1505,14 @@
     <button onclick="undoLastDelete()">Undo</button>
 </div>
 
+<!-- Update banner (subtle, dismissable) -->
+<div class="update-banner" id="updateBanner">
+    <span class="update-banner-icon">✨</span>
+    <span class="update-banner-text" id="updateBannerText">A new version is available</span>
+    <button class="update-banner-action" id="updateBannerAction" onclick="onUpdateBannerAction()">Restart</button>
+    <button class="update-banner-close" onclick="dismissUpdateBanner()" title="Dismiss">✕</button>
+</div>
+
 <!-- Context Menu -->
 <div class="context-menu" id="contextMenu">
     <div class="context-menu-item" onclick="ctxToggleWip()">🔧 Toggle WIP</div>
@@ -1505,7 +1567,7 @@
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.5.0';   // keep in sync with package.json
+const APP_VERSION = '1.5.2';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -1599,6 +1661,35 @@ function checkForUpdatesNow() {
     if (btn) btn.disabled = true;
     if (el) el.textContent = 'Checking for updates…';
     window.widgetAPI.checkForUpdates();
+}
+
+// Subtle update banner. actionLabel null = info only (no button).
+let updateReadyToInstall = false;
+function showUpdateBanner(text, actionLabel) {
+    const banner = document.getElementById('updateBanner');
+    const textEl = document.getElementById('updateBannerText');
+    const actionEl = document.getElementById('updateBannerAction');
+    if (!banner) return;
+    if (textEl) textEl.textContent = text;
+    if (actionEl) {
+        if (actionLabel) {
+            actionEl.textContent = actionLabel;
+            actionEl.classList.remove('hidden');
+            updateReadyToInstall = true;
+        } else {
+            actionEl.classList.add('hidden');
+        }
+    }
+    banner.classList.add('show');
+}
+function dismissUpdateBanner() {
+    const banner = document.getElementById('updateBanner');
+    if (banner) banner.classList.remove('show');
+}
+function onUpdateBannerAction() {
+    if (updateReadyToInstall && window.widgetAPI && window.widgetAPI.restartToUpdate) {
+        window.widgetAPI.restartToUpdate();
+    }
 }
 function exportData() {
     if (typeof guardBlur === 'function') guardBlur();
@@ -1859,6 +1950,23 @@ function parseNaturalSchedule(text) {
     }
 
     // --- DATE keywords ---
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const monthFull = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    function monthIndex(name) {
+        name = name.toLowerCase().slice(0, 3);
+        return months.indexOf(name);
+    }
+    // Resolve a month/day to the next such date that isn't in the past
+    function resolveMonthDay(mi, day) {
+        const d = atMidnight(new Date());
+        d.setMonth(mi, day);
+        // If that date already passed this year, roll to next year
+        const todayMid = atMidnight(new Date());
+        if (d < todayMid) d.setFullYear(d.getFullYear() + 1);
+        return d;
+    }
+
+    let dm;
     if (/\btoday\b/i.test(s)) {
         dueDate = fmt(atMidnight(new Date()));
         s = s.replace(/\btoday\b/i, ' ');
@@ -1866,10 +1974,40 @@ function parseNaturalSchedule(text) {
         const d = atMidnight(new Date()); d.setDate(d.getDate() + 1);
         dueDate = fmt(d);
         s = s.replace(/\btomorrow\b/i, ' ');
+    } else if ((dm = s.match(/\bin\s+(\d{1,3})\s+(day|days|week|weeks|month|months)\b/i))) {
+        // "in 3 days", "in 2 weeks", "in 1 month"
+        const n = parseInt(dm[1], 10);
+        const unit = dm[2].toLowerCase();
+        const d = atMidnight(new Date());
+        if (unit.startsWith('day')) d.setDate(d.getDate() + n);
+        else if (unit.startsWith('week')) d.setDate(d.getDate() + n * 7);
+        else if (unit.startsWith('month')) d.setMonth(d.getMonth() + n);
+        dueDate = fmt(d);
+        s = s.replace(dm[0], ' ');
     } else if (/\bnext week\b/i.test(s)) {
         const d = atMidnight(new Date()); d.setDate(d.getDate() + 7);
         dueDate = fmt(d);
         s = s.replace(/\bnext week\b/i, ' ');
+    } else if (/\bnext month\b/i.test(s)) {
+        const d = atMidnight(new Date()); d.setMonth(d.getMonth() + 1);
+        dueDate = fmt(d);
+        s = s.replace(/\bnext month\b/i, ' ');
+    } else if ((dm = s.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i))) {
+        // "Sep 15", "September 15", "Sept 15th"
+        const mi = monthIndex(dm[1]);
+        const day = parseInt(dm[2], 10);
+        if (mi >= 0 && day >= 1 && day <= 31) {
+            dueDate = fmt(resolveMonthDay(mi, day));
+            s = s.replace(dm[0], ' ');
+        }
+    } else if ((dm = s.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\b/i))) {
+        // "15 Sep", "15th September"
+        const mi = monthIndex(dm[2]);
+        const day = parseInt(dm[1], 10);
+        if (mi >= 0 && day >= 1 && day <= 31) {
+            dueDate = fmt(resolveMonthDay(mi, day));
+            s = s.replace(dm[0], ' ');
+        }
     } else {
         // weekday names → next occurrence of that weekday
         const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
@@ -1883,7 +2021,6 @@ function parseNaturalSchedule(text) {
                 const d = atMidnight(new Date());
                 let delta = (target - d.getDay() + 7) % 7;
                 if (delta === 0) delta = 7;          // "monday" → the upcoming monday
-                if (wm[1]) delta += (delta <= 7 ? 0 : 0); // "next monday" handled same as upcoming
                 d.setDate(d.getDate() + delta);
                 dueDate = fmt(d);
                 s = s.replace(wm[0], ' ');
@@ -1896,6 +2033,47 @@ function parseNaturalSchedule(text) {
 
     const cleaned = s.replace(/\s+/g, ' ').trim();
     return { text: cleaned, dueDate, dueTime };
+}
+
+// Live preview of what will be parsed from the task input, shown as chips
+// so users can trust the natural-language detection before pressing Add.
+function updateParsePreview() {
+    const input = document.getElementById('todoInput');
+    const preview = document.getElementById('parsePreview');
+    if (!input || !preview) return;
+    const raw = input.value;
+    if (!raw.trim()) { preview.style.display = 'none'; preview.innerHTML = ''; return; }
+
+    // Tags
+    const tags = [];
+    const noTags = raw.replace(/#(\w+)/g, (_, t) => { tags.push(t.toLowerCase()); return ''; });
+    // Schedule (only when the pickers haven't been set explicitly)
+    const pickedDate = document.getElementById('dueInput').value;
+    const pickedTime = document.getElementById('dueTimeInput').value;
+    const parsed = parseNaturalSchedule(noTags);
+
+    const chips = [];
+    const effDate = pickedDate || parsed.dueDate;
+    const effTime = pickedTime || parsed.dueTime;
+    if (effDate) {
+        let label = formatDate(effDate);
+        if (effTime) label += ' · ' + formatTime(effTime);
+        chips.push(`<span class="parse-chip">📅 ${label}</span>`);
+    }
+    tags.forEach(t => chips.push(`<span class="parse-chip tag-chip">#${escapeHtml(t)}</span>`));
+
+    if (chips.length) {
+        preview.innerHTML = chips.join('');
+        preview.style.display = 'flex';
+    } else {
+        preview.style.display = 'none';
+        preview.innerHTML = '';
+    }
+}
+
+function clearParsePreview() {
+    const preview = document.getElementById('parsePreview');
+    if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
 }
 
 function addTodo() {
@@ -1956,6 +2134,7 @@ function addTodo() {
     document.getElementById('dueInput').value = '';
     document.getElementById('dueTimeInput').value = '';
     document.getElementById('repeatSelect').value = 'none';
+    clearParsePreview();
     saveData();
     renderTodos();
 }
@@ -3032,21 +3211,128 @@ function exportCurrentNote() {
     if (!editingNoteId) return;
     const note = data.notes.find(n => n.id === editingNoteId);
     if (!note) return;
+    const format = arguments[0] === 'md' ? 'md' : 'txt';
     const title = (note.title || 'Untitled').trim();
-    const bodyText = document.getElementById('noteBody').innerText || '';
-    const content = title + '\n' + '='.repeat(title.length) + '\n\n' + bodyText;
-    const blob = new Blob([content], { type: 'text/plain' });
+    const bodyEl = document.getElementById('noteBody');
+
+    let content, mime, ext;
+    if (format === 'md') {
+        const md = htmlToMarkdown(bodyEl);
+        content = '# ' + (title || 'Untitled') + '\n\n' + md;
+        mime = 'text/markdown';
+        ext = 'md';
+    } else {
+        const bodyText = bodyEl.innerText || '';
+        content = title + '\n' + '='.repeat(title.length) + '\n\n' + bodyText;
+        mime = 'text/plain';
+        ext = 'txt';
+    }
+
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     const safe = title.replace(/[^\w\- ]+/g, '').trim() || 'note';
-    a.download = safe + '.txt';
+    a.download = safe + '.' + ext;
     if (typeof guardBlur === 'function') guardBlur();
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast('Note exported', null);
+    showToast('Note exported as .' + ext, null);
+}
+
+// Convert the note editor's HTML into Markdown. Handles the formatting the
+// editor can produce: headings, bold/italic/strikethrough, links, ordered &
+// unordered (nested) lists, blockquotes, code, and paragraph/line breaks.
+function htmlToMarkdown(rootEl) {
+    const lines = [];
+
+    function inline(node) {
+        let out = '';
+        node.childNodes.forEach(child => {
+            if (child.nodeType === 3) { // text
+                out += child.textContent;
+            } else if (child.nodeType === 1) {
+                const tag = child.tagName.toLowerCase();
+                const inner = inline(child);
+                if (tag === 'b' || tag === 'strong') out += '**' + inner + '**';
+                else if (tag === 'i' || tag === 'em') out += '*' + inner + '*';
+                else if (tag === 'u') out += inner; // Markdown has no underline
+                else if (tag === 's' || tag === 'strike' || tag === 'del') out += '~~' + inner + '~~';
+                else if (tag === 'code') out += '`' + inner + '`';
+                else if (tag === 'a') {
+                    const href = child.getAttribute('href') || '';
+                    out += href ? `[${inner}](${href})` : inner;
+                } else if (tag === 'br') out += '\n';
+                else out += inner;
+            }
+        });
+        return out;
+    }
+
+    function walkList(listEl, ordered, depth) {
+        let i = 1;
+        listEl.childNodes.forEach(li => {
+            if (li.nodeType !== 1 || li.tagName.toLowerCase() !== 'li') return;
+            const indent = '    '.repeat(depth);
+            // Text of this <li> excluding nested lists
+            let liText = '';
+            const nested = [];
+            li.childNodes.forEach(c => {
+                if (c.nodeType === 1 && /^(ul|ol)$/i.test(c.tagName)) nested.push(c);
+                else liText += (c.nodeType === 3 ? c.textContent : inline(c));
+            });
+            const marker = ordered ? (i + '.') : '-';
+            lines.push(indent + marker + ' ' + liText.trim());
+            nested.forEach(n => walkList(n, n.tagName.toLowerCase() === 'ol', depth + 1));
+            i++;
+        });
+    }
+
+    function block(node) {
+        if (node.nodeType === 3) {
+            const t = node.textContent.trim();
+            if (t) lines.push(t);
+            return;
+        }
+        if (node.nodeType !== 1) return;
+        const tag = node.tagName.toLowerCase();
+        if (/^h[1-6]$/.test(tag)) {
+            const level = parseInt(tag[1], 10);
+            lines.push('#'.repeat(level) + ' ' + inline(node).trim());
+            lines.push('');
+        } else if (tag === 'ul' || tag === 'ol') {
+            walkList(node, tag === 'ol', 0);
+            lines.push('');
+        } else if (tag === 'blockquote') {
+            inline(node).split('\n').forEach(l => lines.push('> ' + l));
+            lines.push('');
+        } else if (tag === 'pre') {
+            lines.push('```');
+            lines.push(node.innerText);
+            lines.push('```');
+            lines.push('');
+        } else if (tag === 'br') {
+            lines.push('');
+        } else if (tag === 'div' || tag === 'p') {
+            // A div/p may itself contain block-level children (lists, headings)
+            const hasBlockChild = Array.from(node.childNodes).some(c =>
+                c.nodeType === 1 && /^(ul|ol|h[1-6]|blockquote|pre|div|p)$/i.test(c.tagName));
+            if (hasBlockChild) {
+                node.childNodes.forEach(block);
+            } else {
+                const line = inline(node).replace(/\n+$/, '');
+                lines.push(line.trim());
+            }
+        } else {
+            lines.push(inline(node).trim());
+        }
+    }
+
+    rootEl.childNodes.forEach(block);
+    // Collapse 3+ blank lines to a single blank line, trim ends
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '') + '\n';
 }
 
 function deleteCurrentNote() {
@@ -4267,7 +4553,6 @@ if (window.widgetAPI) {
         window.widgetAPI.onUpdateStatus((status) => {
             const el = document.getElementById('updateStatusText');
             const btn = document.getElementById('checkUpdatesBtn');
-            if (!el) return;
             const map = {
                 checking: 'Checking for updates…',
                 available: 'Update found — downloading…',
@@ -4276,8 +4561,18 @@ if (window.widgetAPI) {
                 dev: 'Updates only work in the installed app',
                 error: 'Update check failed',
             };
-            el.textContent = map[status.state] || '';
+            if (el) el.textContent = map[status.state] || '';
+            if (status.state === 'error' && status.message) {
+                // Surface the real reason so failures are diagnosable, not opaque
+                if (el) el.textContent = 'Update check failed: ' + status.message.slice(0, 120);
+            }
             if (btn && status.state !== 'checking') btn.disabled = false;
+            // Subtle in-app banner for the important states
+            if (status.state === 'available') {
+                showUpdateBanner('A new version is downloading…', null);
+            } else if (status.state === 'downloaded') {
+                showUpdateBanner('Update ready to install', 'Restart');
+            }
         });
     }
 
