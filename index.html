@@ -40,6 +40,16 @@
         .todo-item, .note-item, .content { -webkit-app-region: no-drag; }
         body.electron .titlebar { cursor: grab; }
 
+        /* In-note find bar */
+        .note-find-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
         /* Custom resize grip (bottom-right corner) — only in Electron */
         .resize-grip { display: none; }
         body.electron .resize-grip {
@@ -441,6 +451,26 @@
 
         .todo-body { flex: 1; min-width: 0; }
         .todo-text { font-size: 13px; color: var(--text); word-wrap: break-word; white-space: pre-wrap; }
+
+        /* Subtasks / checklist */
+        .subtask-list { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+        .subtask-item { display: flex; align-items: center; gap: 6px; }
+        .subtask-check {
+            width: 13px; height: 13px; flex-shrink: 0;
+            border: 2px solid var(--border); border-radius: 4px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .subtask-check:hover { border-color: var(--accent); }
+        .subtask-check.checked { background: var(--accent); border-color: var(--accent); }
+        .subtask-check.checked::after { content: '✓'; color: #fff; font-size: 8px; font-weight: 700; }
+        .subtask-text { font-size: 12px; color: var(--text-dim); flex: 1; }
+        .subtask-text.done { text-decoration: line-through; opacity: 0.6; }
+        .subtask-del {
+            border: none; background: none; color: var(--text-dim); cursor: pointer;
+            font-size: 10px; opacity: 0; padding: 0 4px;
+        }
+        .subtask-item:hover .subtask-del { opacity: 0.6; }
+        .subtask-del:hover { color: var(--danger); opacity: 1; }
 
         .todo-edit-input {
             width: 100%;
@@ -1149,6 +1179,7 @@
                 <button class="filter-btn" id="filterActive" onclick="setFilter('active')">Active</button>
                 <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
                 <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Done</button>
+                <button class="filter-btn" id="filterArchived" onclick="setFilter('archived')">Archived</button>
             </div>
         </div>
 
@@ -1195,6 +1226,7 @@
                 <option value="monthly">Monthly</option>
             </select>
             <input type="date" class="due-input" id="dueInput" title="Due date">
+            <input type="time" class="due-input" id="dueTimeInput" title="Due time (optional)">
         </div>
 
         <div class="add-bar">
@@ -1256,6 +1288,12 @@
                     </div>
                 </div>
             </div>
+            <div class="note-find-bar" id="noteFindBar" style="display:none;">
+                <input type="text" id="noteFindInput" placeholder="Find in note…" class="search-input" style="flex:1;" oninput="noteFind()" onkeydown="if(event.key==='Enter')noteFindNext(); if(event.key==='Escape')closeNoteFind();">
+                <span id="noteFindCount" style="font-size:11px;color:var(--text-dim);white-space:nowrap;">0/0</span>
+                <button class="filter-btn" onclick="noteFindNext()" title="Next (Enter)">▾</button>
+                <button class="filter-btn" onclick="closeNoteFind()" title="Close (Esc)">✕</button>
+            </div>
             <div class="note-editor-body" id="noteBody" contenteditable="true"
                  spellcheck="true"
                  data-placeholder="Start writing..."
@@ -1265,6 +1303,7 @@
                  onblur="linkifyEditor(); saveCurrentNote();"></div>
             <div class="add-bar">
                 <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
+                <button class="filter-btn" onclick="exportCurrentNote()" title="Export this note">⇩ Export</button>
                 <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 words</span>
                 <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
             </div>
@@ -1336,6 +1375,7 @@
         <div class="context-sub-menu" id="ctxSectionMenu"></div>
     </div>
     <div class="separator"></div>
+    <div class="context-menu-item" id="ctxArchive" onclick="ctxToggleArchive()">🗄️ Archive</div>
     <div class="context-menu-item" onclick="ctxDuplicate()">📄 Duplicate</div>
     <div class="context-menu-item" onclick="ctxCopy()">📋 Copy Text</div>
     <div class="context-menu-item danger" onclick="ctxDelete()">🗑️ Delete</div>
@@ -1381,7 +1421,7 @@ function syncReminders() {
     if (!window.widgetAPI || !window.widgetAPI.syncReminders) return;
     const due = data.todos
         .filter(t => t.dueDate && !t.completed)
-        .map(t => ({ id: t.id, text: t.text, dueDate: t.dueDate, completed: t.completed }));
+        .map(t => ({ id: t.id, text: t.text, dueDate: t.dueDate, dueTime: t.dueTime || null, completed: t.completed }));
     window.widgetAPI.syncReminders(due);
 }
 
@@ -1567,6 +1607,7 @@ function setFilter(filter) {
     document.getElementById('filterActive').classList.toggle('active', filter === 'active');
     document.getElementById('filterWip').classList.toggle('active', filter === 'wip');
     document.getElementById('filterDone').classList.toggle('active', filter === 'done');
+    document.getElementById('filterArchived').classList.toggle('active', filter === 'archived');
     renderTodos();
 }
 
@@ -1585,6 +1626,7 @@ function addTodo() {
 
     const priority = document.getElementById('prioritySelect').value;
     const dueDate = document.getElementById('dueInput').value || null;
+    const dueTime = document.getElementById('dueTimeInput').value || null;
     const repeat = document.getElementById('repeatSelect').value || 'none';
 
     // Group: use the explicit choice from the options dropdown if set;
@@ -1610,6 +1652,7 @@ function addTodo() {
         group: group,
         section: section,
         dueDate: dueDate,
+        dueTime: dueTime,
         repeat: repeat,
         createdAt: new Date().toISOString(),
     });
@@ -1618,6 +1661,7 @@ function addTodo() {
     document.getElementById('prioritySelect').value = 'none';
     document.getElementById('sectionSelect').value = '';
     document.getElementById('dueInput').value = '';
+    document.getElementById('dueTimeInput').value = '';
     document.getElementById('repeatSelect').value = 'none';
     saveData();
     renderTodos();
@@ -1729,6 +1773,65 @@ function toggleWip(id) {
         saveData();
         renderTodos();
     }
+}
+
+// ===== SUBTASKS / CHECKLIST =====
+function addSubtask(taskId) {
+    const todo = data.todos.find(t => t.id === taskId);
+    if (!todo) return;
+    if (!todo.subtasks) todo.subtasks = [];
+    todo.subtasks.push({ text: 'New subtask', done: false });
+    saveData();
+    renderTodos();
+    // Focus-edit the new subtask
+    requestAnimationFrame(() => {
+        const items = document.querySelectorAll(`.todo-item[data-id="${taskId}"] .subtask-text`);
+        const last = items[items.length - 1];
+        if (last) editSubtask(taskId, todo.subtasks.length - 1, last);
+    });
+}
+
+function toggleSubtask(taskId, index) {
+    const todo = data.todos.find(t => t.id === taskId);
+    if (!todo || !todo.subtasks || !todo.subtasks[index]) return;
+    todo.subtasks[index].done = !todo.subtasks[index].done;
+    saveData();
+    renderTodos();
+}
+
+function deleteSubtask(taskId, index) {
+    const todo = data.todos.find(t => t.id === taskId);
+    if (!todo || !todo.subtasks) return;
+    todo.subtasks.splice(index, 1);
+    saveData();
+    renderTodos();
+}
+
+function editSubtask(taskId, index, spanEl) {
+    const todo = data.todos.find(t => t.id === taskId);
+    if (!todo || !todo.subtasks || !todo.subtasks[index]) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = todo.subtasks[index].text;
+    input.className = 'todo-edit-input';
+    input.style.margin = '0';
+    const parent = spanEl.closest('.todo-item');
+    if (parent) parent.setAttribute('draggable', 'false');
+    spanEl.replaceWith(input);
+    input.focus();
+    input.select();
+    const commit = () => {
+        const v = input.value.trim();
+        if (v) todo.subtasks[index].text = v;
+        else todo.subtasks.splice(index, 1); // empty → remove
+        saveData();
+        renderTodos();
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); renderTodos(); }
+    });
+    input.addEventListener('blur', commit);
 }
 
 function toggleTodo(id) {
@@ -1854,6 +1957,8 @@ function renderTodos() {
     const groupFilter = document.getElementById('groupFilter').value;
 
     let todos = data.todos.filter(t => {
+        if (currentFilter === 'archived') { if (!t.archived) return false; }
+        else if (t.archived) return false;   // hide archived from all other views
         if (currentFilter === 'active' && (t.completed || t.wip)) return false;
         if (currentFilter === 'wip' && !t.wip) return false;
         if (currentFilter === 'done' && !t.completed) return false;
@@ -2113,16 +2218,30 @@ function renderTodoItem(t) {
                 <div class="todo-text" ondblclick="startEditTodo('${t.id}', this)" title="Double-click to edit">${escapeHtml(t.text)}</div>
                 <div class="todo-meta">
                     ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:rgba(124,92,252,0.2);color:var(--accent);">↻ ${t.repeat}</span>` : ''}
+                    ${(t.subtasks && t.subtasks.length) ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">☑ ${t.subtasks.filter(s=>s.done).length}/${t.subtasks.length}</span>` : ''}
                     ${(t.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
-                    ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}</span>` : ''}
+                    ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}${t.dueTime ? ' ' + formatTime(t.dueTime) : ''}</span>` : ''}
                 </div>
+                ${renderSubtasks(t)}
             </div>
             <div class="todo-actions">
+                <button class="todo-action-btn" onclick="addSubtask('${t.id}')" title="Add subtask">☑+</button>
                 <button class="todo-action-btn" onclick="toggleWip('${t.id}')" title="Toggle WIP">🔧</button>
                 <button class="todo-action-btn delete" onclick="deleteTodo('${t.id}')" title="Delete">🗑</button>
             </div>
         </div>
     `;
+}
+
+// Render the subtask checklist under a task
+function renderSubtasks(t) {
+    if (!t.subtasks || !t.subtasks.length) return '';
+    return `<div class="subtask-list">` + t.subtasks.map((s, i) => `
+        <div class="subtask-item">
+            <div class="subtask-check ${s.done ? 'checked' : ''}" onclick="toggleSubtask('${t.id}', ${i})"></div>
+            <span class="subtask-text ${s.done ? 'done' : ''}" ondblclick="editSubtask('${t.id}', ${i}, this)">${escapeHtml(s.text)}</span>
+            <button class="subtask-del" onclick="deleteSubtask('${t.id}', ${i})" title="Remove">✕</button>
+        </div>`).join('') + `</div>`;
 }
 
 // ===== DRAG TO REORDER =====
@@ -2363,6 +2482,7 @@ function toggleSelectAll() {
     const search = document.getElementById('searchTodos').value.toLowerCase();
     const groupFilter = document.getElementById('groupFilter').value;
     const visible = data.todos.filter(t => {
+        if (currentFilter === 'archived') { if (!t.archived) return false; } else if (t.archived) return false;
         if (currentFilter === 'active' && (t.completed || t.wip)) return false;
         if (currentFilter === 'wip' && !t.wip) return false;
         if (currentFilter === 'done' && !t.completed) return false;
@@ -2455,6 +2575,7 @@ function updateSelectedCount() {
         const search = document.getElementById('searchTodos').value.toLowerCase();
         const groupFilter = document.getElementById('groupFilter').value;
         const visible = data.todos.filter(t => {
+            if (currentFilter === 'archived') { if (!t.archived) return false; } else if (t.archived) return false;
             if (currentFilter === 'active' && (t.completed || t.wip)) return false;
             if (currentFilter === 'wip' && !t.wip) return false;
             if (currentFilter === 'done' && !t.completed) return false;
@@ -2539,10 +2660,46 @@ function openNoteEditor(id) {
 function closeNoteEditor() {
     editingNoteId = null;
     if (window.widgetAPI && window.widgetAPI.setEditing) window.widgetAPI.setEditing(false);
+    closeNoteFind();
     document.getElementById('noteEditor').classList.remove('active');
     document.getElementById('noteList').style.display = '';
     document.querySelector('#tab-notes .toolbar').style.display = '';
     renderNotes();
+}
+
+// ===== IN-NOTE FIND (Ctrl+F) =====
+function openNoteFind() {
+    if (!editingNoteId) return;
+    const bar = document.getElementById('noteFindBar');
+    bar.style.display = 'flex';
+    const inp = document.getElementById('noteFindInput');
+    inp.focus();
+    inp.select();
+    noteFind();
+}
+function closeNoteFind() {
+    const bar = document.getElementById('noteFindBar');
+    if (bar) bar.style.display = 'none';
+    if (window.getSelection) window.getSelection().removeAllRanges();
+}
+function noteFind() {
+    const term = document.getElementById('noteFindInput').value;
+    const body = document.getElementById('noteBody');
+    const text = body.innerText || '';
+    const countEl = document.getElementById('noteFindCount');
+    if (!term) { countEl.textContent = '0/0'; return; }
+    // Count occurrences (case-insensitive)
+    const matches = text.toLowerCase().split(term.toLowerCase()).length - 1;
+    countEl.textContent = matches ? ('•/' + matches) : '0/0';
+    if (matches > 0) {
+        // Jump to first match using the browser's find
+        window.getSelection().removeAllRanges();
+        window.find(term, false, false, true);
+    }
+}
+function noteFindNext() {
+    const term = document.getElementById('noteFindInput').value;
+    if (term) window.find(term, false, false, true); // wrap-around
 }
 
 function onNoteInput() {
@@ -2561,6 +2718,28 @@ function saveCurrentNote() {
     note.updatedAt = new Date().toISOString();
     saveData();
     updateCharCount();
+}
+
+// Export the currently-open note as a .txt file (plain text of its content)
+function exportCurrentNote() {
+    if (!editingNoteId) return;
+    const note = data.notes.find(n => n.id === editingNoteId);
+    if (!note) return;
+    const title = (note.title || 'Untitled').trim();
+    const bodyText = document.getElementById('noteBody').innerText || '';
+    const content = title + '\n' + '='.repeat(title.length) + '\n\n' + bodyText;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safe = title.replace(/[^\w\- ]+/g, '').trim() || 'note';
+    a.download = safe + '.txt';
+    if (typeof guardBlur === 'function') guardBlur();
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Note exported', null);
 }
 
 function deleteCurrentNote() {
@@ -2957,6 +3136,9 @@ function showContextMenu(e, id) {
     document.getElementById('ctxPrioHigh').classList.toggle('active', prio === 'high');
     document.getElementById('ctxPrioMedium').classList.toggle('active', prio === 'medium');
     document.getElementById('ctxPrioLow').classList.toggle('active', prio === 'low');
+    // Archive/Unarchive label
+    const archEl = document.getElementById('ctxArchive');
+    if (archEl) archEl.textContent = (todo && todo.archived) ? '🗄️ Unarchive' : '🗄️ Archive';
     sub.innerHTML = `<div class="context-menu-item ${!currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('')">No Group</div>` +
         data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('${g.replace(/'/g, "\\'")}')">${escapeHtml(g)}</div>`).join('');
 
@@ -3022,6 +3204,16 @@ function ctxDelete() {
 
 function ctxToggleWip() {
     toggleWip(contextTargetId);
+    hideContextMenu();
+}
+
+function ctxToggleArchive() {
+    const todo = data.todos.find(t => t.id === contextTargetId);
+    if (todo) {
+        todo.archived = !todo.archived;
+        saveData();
+        renderTodos();
+    }
     hideContextMenu();
 }
 
@@ -3236,6 +3428,15 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function formatTime(t) {
+    // t is "HH:MM" 24h → format to 12h with am/pm
+    if (!t || !/^\d{1,2}:\d{2}/.test(t)) return t || '';
+    const [h, m] = t.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
 function formatDate(dateStr) {
     const d = new Date(dateStr);
     const today = new Date();
@@ -3276,6 +3477,11 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         if (editingNoteId) closeNoteEditor();
         else if (appState === 'expanded') collapseToWidget();
+    }
+    // Ctrl+F to find within the open note
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && editingNoteId) {
+        e.preventDefault();
+        openNoteFind();
     }
     // Ctrl+N for new note
     if (e.ctrlKey && e.key === 'n' && appState === 'expanded') {
@@ -3583,6 +3789,14 @@ if (window.widgetAPI) {
     if (window.widgetAPI.onForceWidgetUI) {
         window.widgetAPI.onForceWidgetUI(() => {
             collapseUIOnly();
+        });
+    }
+    // Quick-add hotkey: expand, go to Tasks, focus the input
+    if (window.widgetAPI.onQuickAdd) {
+        window.widgetAPI.onQuickAdd(() => {
+            expandApp();
+            switchTab('todos');
+            setTimeout(() => { const i = document.getElementById('todoInput'); if (i) i.focus(); }, 150);
         });
     }
 

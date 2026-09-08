@@ -1,6 +1,5 @@
 name: Build Windows App
 
-# Build the .exe whenever you push, or manually from the Actions tab
 on:
   push:
     branches: [main, master]
@@ -22,13 +21,20 @@ jobs:
         with:
           node-version: 20
 
+      - name: Read app version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json | ConvertFrom-Json).version
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
       - name: Install dependencies
         run: npm install
 
       - name: Build Windows installer
         run: npm run make
 
-      # Collect the built .exe(s) into a folder for the release
+      # Collect the built .exe(s) for the release
       - name: Gather installer
         shell: pwsh
         run: |
@@ -36,12 +42,16 @@ jobs:
           Get-ChildItem -Path out/make -Recurse -Filter *.exe | ForEach-Object {
             Copy-Item $_.FullName -Destination release/
           }
+          # electron-updater/update-electron-app also expects RELEASES + .nupkg for Squirrel feeds
+          Get-ChildItem -Path out/make -Recurse -Include *.nupkg,RELEASES | ForEach-Object {
+            Copy-Item $_.FullName -Destination release/
+          }
 
-      # Publish to a GitHub Release (does NOT count against Actions artifact storage)
+      # Publish a version-tagged Release (so auto-update can detect new versions)
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Jot (latest build)
-          files: release/*.exe
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Jot v${{ steps.ver.outputs.version }}
+          files: release/*
           fail_on_unmatched_files: true

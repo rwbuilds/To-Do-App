@@ -33,7 +33,10 @@ function checkReminders() {
   reminderTasks.forEach(t => {
     if (!t.dueDate || t.completed) return;
     if (notifiedTaskIds.has(t.id)) return;
-    const due = new Date(t.dueDate + 'T09:00:00');
+    const tm = (t.dueTime && /^\d{1,2}:\d{2}/.test(t.dueTime))
+      ? (t.dueTime.length === 5 ? t.dueTime + ':00' : t.dueTime)
+      : '09:00:00';
+    const due = new Date(t.dueDate + 'T' + tm);
     if (now >= due) {
       notifiedTaskIds.add(t.id);
       try {
@@ -111,7 +114,9 @@ function createWindow() {
     height: WIDGET_SIZE.height,
     frame: false,              // no OS title bar — we draw our own
     transparent: true,         // allows the rounded/transparent widget
-    resizable: false,          // toggled on when expanded
+    resizable: false,          // never OS-resizable (we resize via a custom grip)
+    maximizable: false,        // block OS maximize (double-click / snap-maximize)
+    fullscreenable: false,
     alwaysOnTop: true,         // real always-on-top
     skipTaskbar: false,
     hasShadow: false,          // no OS shadow — we style our own
@@ -429,9 +434,18 @@ ipcMain.on('minimize-to-tray', () => {
   if (mainWindow) mainWindow.hide();
 });
 
-// (Titlebar drag no longer needs to toggle resizable — the window stays
-// non-resizable at the OS level; resizing is done via the custom corner grip.)
-ipcMain.on('set-dragging', () => {});
+// Titlebar drag start/end: capture the size to lock during the drag, so no OS
+// edge-resize can change dimensions while moving.
+let dragLockSize = null;
+ipcMain.on('set-dragging', (event, isDragging) => {
+  if (!mainWindow) return;
+  if (isDragging && isExpanded) {
+    const b = mainWindow.getBounds();
+    dragLockSize = { width: b.width, height: b.height };
+  } else {
+    dragLockSize = null;
+  }
+});
 
 // Custom resize grip: set the expanded window's size (clamped), keeping top-left anchored
 ipcMain.on('resize-to', (event, w, h) => {
@@ -461,7 +475,17 @@ ipcMain.on('move-window', (event, mouseX, mouseY, offsetX, offsetY) => {
   const nx = Math.round(mouseX - offsetX);
   const ny = Math.round(mouseY - offsetY);
   if (!isFinite(nx) || !isFinite(ny)) return;
-  try { mainWindow.setPosition(nx, ny); } catch (e) { return; }
+  try {
+    if (isExpanded && dragLockSize) {
+      // Lock to the size captured at drag-start → the window can only move, never resize.
+      mainWindow.setBounds({ x: nx, y: ny, width: dragLockSize.width, height: dragLockSize.height });
+    } else if (isExpanded) {
+      const cur = mainWindow.getBounds();
+      mainWindow.setBounds({ x: nx, y: ny, width: cur.width, height: cur.height });
+    } else {
+      mainWindow.setPosition(nx, ny);
+    }
+  } catch (e) { return; }
   // In widget mode, track the anchor in memory (persisted on drag-end, not every frame)
   if (!mainWindow.isResizable()) {
     widgetAnchor = { x: nx, y: ny };
@@ -618,6 +642,17 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
+  // Auto-updates from GitHub Releases (packaged builds only). Checks on launch
+  // and periodically; installs on next quit. Wrapped so a failure never crashes.
+  if (app.isPackaged) {
+    try {
+      require('update-electron-app').updateElectronApp({
+        updateInterval: '1 hour',
+        notifyUser: true,
+      });
+    } catch (e) { console.error('auto-update init failed:', e); }
+  }
+
   // Global hotkey to summon the widget from anywhere (even from tray)
   try {
     globalShortcut.register('CommandOrControl+Shift+Space', () => {
@@ -628,6 +663,13 @@ app.whenReady().then(() => {
         mainWindow.show();
         mainWindow.focus();
       }
+    });
+    // Quick-add: summon, expand, and focus the task input
+    globalShortcut.register('CommandOrControl+Shift+J', () => {
+      if (!mainWindow) { createWindow(); return; }
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('quick-add');
     });
   } catch (e) { /* hotkey may be taken by another app; ignore */ }
 

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   openBackupsFolder: () => ipcRenderer.send('open-backups-folder'),
   onCollapseOnBlur: (cb) => ipcRenderer.on('collapse-on-blur', cb),
   onForceWidgetUI: (cb) => ipcRenderer.on('force-widget-ui', cb),
+  onQuickAdd: (cb) => ipcRenderer.on('quick-add', cb),
   setEditing: (editing) => ipcRenderer.send('set-editing', editing),
   suppressCollapse: () => ipcRenderer.send('suppress-collapse'),
   syncReminders: (tasks) => ipcRenderer.send('sync-reminders', tasks),
