@@ -1,7 +1,7 @@
 {
   "name": "jot",
   "productName": "Jot",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "A draggable, always-on-top todo & notes widget",
   "main": "main.js",
   "author": "rushanwi",
@@ -13,7 +13,9 @@
   "scripts": {
     "start": "electron .",
     "package": "electron-forge package",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "version:check": "node scripts/check-version-sync.js",
+    "release": "node scripts/release.js"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
@@ -23,6 +25,7 @@
     "@electron-forge/cli": "^7.4.0",
     "@electron-forge/maker-squirrel": "^7.4.0",
     "@electron-forge/maker-zip": "^7.4.0",
+    "@electron-forge/maker-dmg": "^7.4.0",
     "electron": "^31.0.0"
   },
   "config": {
@@ -31,11 +34,15 @@
         "name": "Jot",
         "executableName": "jot",
         "icon": "icon",
-        "asar": true
+        "asar": true,
+        "osxSign": {
+          "identity": "-"
+        }
       },
       "makers": [
         {
           "name": "@electron-forge/maker-squirrel",
+          "platforms": ["win32"],
           "config": {
             "name": "jot",
             "setupExe": "JotSetup.exe",
@@ -43,8 +50,16 @@
           }
         },
         {
+          "name": "@electron-forge/maker-dmg",
+          "platforms": ["darwin"],
+          "config": {
+            "name": "Jot",
+            "icon": "icon.icns"
+          }
+        },
+        {
           "name": "@electron-forge/maker-zip",
-          "platforms": ["win32"]
+          "platforms": ["win32", "darwin"]
         }
       ]
     }

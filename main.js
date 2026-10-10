@@ -551,11 +551,21 @@ ipcMain.on('auto-backup', (event, jsonString) => {
 
     // Only write once per day
     if (fs.existsSync(file)) return;
-    fs.writeFileSync(file, jsonString);
 
-    // Prune: keep the 7 most recent
+    // Validate the payload is real JSON before persisting, so we never write a
+    // corrupt backup that the once-per-day guard would then refuse to replace.
+    try { JSON.parse(jsonString); } catch (e) { return; }
+
+    // Atomic write: write to a temp file then rename (atomic on the same volume),
+    // so a crash mid-write can't leave a truncated backup.
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, jsonString);
+    fs.renameSync(tmp, file);
+
+    // Prune: keep the 7 most recent. Match the exact dated filename so stray
+    // .tmp files never count toward (or get caught by) the prune.
     const files = fs.readdirSync(dir)
-      .filter(f => f.startsWith('jot-autobackup-'))
+      .filter(f => /^jot-autobackup-\d{4}-\d{2}-\d{2}\.json$/.test(f))
       .sort()
       .reverse();
     files.slice(7).forEach(f => {
@@ -666,6 +676,14 @@ ipcMain.on('set-reminders', (event, enabled) => {
 // update-electron-app has configured the feed. Reports back via 'update-status'.
 ipcMain.on('check-for-updates', (event) => {
   const send = (s) => { if (mainWindow) mainWindow.webContents.send('update-status', s); };
+  // Auto-update is only wired for Windows (Squirrel + the GitHub Release feed).
+  // macOS/Linux builds are distributed/updated manually, and the update server
+  // has no feed for them, so a check would 404 and look like a failure. Report a
+  // clear state instead of erroring.
+  if (process.platform !== 'win32') {
+    send({ state: 'manual', message: 'Updates are installed manually on this platform.' });
+    return;
+  }
   if (!app.isPackaged) {
     send({ state: 'dev' });   // updates only work in the installed app
     return;
@@ -699,7 +717,10 @@ app.whenReady().then(() => {
 
   // Auto-updates from GitHub Releases (packaged builds only). Checks on launch
   // and periodically; installs on next quit. Wrapped so a failure never crashes.
-  if (app.isPackaged) {
+  // Windows only: the release feed ships Squirrel.Windows artifacts, and
+  // Squirrel.Mac auto-update additionally requires a signed+notarized app, which
+  // this project does not produce — so macOS/Linux are manual-update.
+  if (app.isPackaged && process.platform === 'win32') {
     try {
       require('update-electron-app').updateElectronApp({
         updateInterval: '1 hour',

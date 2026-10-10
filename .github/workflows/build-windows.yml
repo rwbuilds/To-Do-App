@@ -3,6 +3,10 @@ name: Build Windows App
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -28,8 +32,26 @@ jobs:
           $v = (Get-Content package.json | ConvertFrom-Json).version
           echo "version=$v" >> $env:GITHUB_OUTPUT
 
+      # Fail fast if this version was already released. Re-releasing an existing
+      # tag would mutate that Release and can corrupt the Squirrel auto-update
+      # feed (RELEASES/.nupkg). Bump the version in package.json instead.
+      - name: Guard against tag collision
+        shell: pwsh
+        run: |
+          $tag = "v${{ steps.ver.outputs.version }}"
+          git fetch --tags --quiet
+          $exists = git tag --list $tag
+          if ($exists) {
+            Write-Error "Tag $tag already exists. Bump 'version' in package.json (and APP_VERSION in index.html) before pushing."
+            exit 1
+          }
+          Write-Host "No existing release for $tag — proceeding."
+
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Check version sync (package.json vs index.html APP_VERSION)
+        run: npm run version:check
 
       - name: Build Windows installer
         run: npm run make

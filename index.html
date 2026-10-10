@@ -1592,7 +1592,7 @@
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.6.0';   // keep in sync with package.json
+const APP_VERSION = '1.6.1';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -2831,8 +2831,12 @@ function onTodoDrop(e, targetId) {
     }
 
     // Case B: a task dropped onto another task with Shift held → make it a subtask.
+    // Shift expresses demote intent, so always consume the drop here — never fall
+    // through to reorder (which would double-move the task).
     if (e.shiftKey && dragSrcId && dragSrcId !== targetId) {
-        if (demoteTaskToSubtask(dragSrcId, targetId)) { dragSrcId = null; return; }
+        demoteTaskToSubtask(dragSrcId, targetId);
+        dragSrcId = null;
+        return;
     }
 
     if (!dragSrcId || dragSrcId === targetId) return;
@@ -2857,6 +2861,17 @@ function onTodoDrop(e, targetId) {
     const [moved] = data.todos.splice(srcIdx, 1);
     const newTgtIdx = data.todos.findIndex(t => t.id === targetId);
     data.todos.splice(newTgtIdx, 0, moved);
+
+    // A manual drag-reorder only sticks under Manual sort — any other sort
+    // re-orders on the next render and the row would snap back. So switch to
+    // Manual automatically when the user reorders by hand.
+    if (currentSort !== 'manual') {
+        currentSort = 'manual';
+        if (data.settings) data.settings.sort = 'manual';
+        const ss = document.getElementById('sortSelect');
+        if (ss) ss.value = 'manual';
+        if (typeof showToast === 'function') showToast('Sort set to Manual to keep your order');
+    }
 
     saveData();
     renderTodos();
@@ -2964,6 +2979,16 @@ function demoteTaskToSubtask(srcId, dstId) {
     const dstTask = data.todos.find(t => t.id === dstId);
     if (srcIdx === -1 || !dstTask) return false;
     const src = data.todos[srcIdx];
+
+    // Demoting flattens the task to {text, done}: its priority, tags, dueDate,
+    // dueTime, repeat, group/section and createdAt are NOT representable on a
+    // subtask and would be lost. Snapshot the whole task first so Undo can
+    // restore it exactly, and warn the user when real metadata is being dropped.
+    const snapshot = JSON.parse(JSON.stringify(src));
+    const losesMeta = !!(src.dueDate || (src.repeat && src.repeat !== 'none') ||
+                         (src.tags && src.tags.length) ||
+                         (src.priority && src.priority !== 'none'));
+
     if (!dstTask.subtasks) dstTask.subtasks = [];
     // Carry the task's own subtasks up as sibling subtasks so none are lost
     dstTask.subtasks.push({ text: src.text || '', done: !!src.completed });
@@ -2973,6 +2998,11 @@ function demoteTaskToSubtask(srcId, dstId) {
     data.todos.splice(srcIdx, 1);
     saveData();
     renderTodos();
+    // Offer undo (restores the full task with all metadata at its old position)
+    showToast(
+        losesMeta ? 'Made a subtask — due date/tags/priority dropped' : 'Made a subtask',
+        { type: 'todos', items: [{ item: snapshot, index: srcIdx }] }
+    );
     return true;
 }
 
@@ -3319,7 +3349,7 @@ function openNoteEditor(id) {
     document.getElementById('noteTagsInput').value = (note.tags || []).join(', ');
     // Load HTML body into the contenteditable div. Migrate old plain-text notes.
     const bodyEl = document.getElementById('noteBody');
-    bodyEl.innerHTML = note.bodyHtml != null ? note.bodyHtml : escapeHtml(note.body || '').replace(/\n/g, '<br>');
+    bodyEl.innerHTML = note.bodyHtml != null ? sanitizeHtml(note.bodyHtml) : escapeHtml(note.body || '').replace(/\n/g, '<br>');
     linkifyEditor();
     updateCharCount();
     updateToolbarState();
@@ -3382,7 +3412,7 @@ function saveCurrentNote() {
     if (!note) return;
     note.title = document.getElementById('noteTitle').value;
     const bodyEl = document.getElementById('noteBody');
-    note.bodyHtml = bodyEl.innerHTML;
+    note.bodyHtml = sanitizeHtml(bodyEl.innerHTML);
     note.body = bodyEl.innerText;  // plain text for search/preview
     note.updatedAt = new Date().toISOString();
     saveData();
@@ -3734,7 +3764,15 @@ function fmtLink() {
         if (selectedText) {
             document.execCommand('createLink', false, url);
         } else {
-            document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>&nbsp;`);
+            const link = makeSafeLink(url);
+            if (link) {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount) {
+                    const range = sel.getRangeAt(0);
+                    range.insertNode(document.createTextNode('\u00a0'));
+                    range.insertNode(link);
+                }
+            }
         }
         linkifyEditor();
         saveCurrentNote();
@@ -3753,6 +3791,88 @@ function fmtLink() {
 
 // Make all links in the editor open in the browser on click,
 // and auto-wrap plain-text URLs as clickable links.
+// Allowlist-based HTML sanitizer for note content. Notes are stored as HTML
+// (bodyHtml) and re-rendered via innerHTML, so any HTML that reaches storage —
+// from rich paste, import, or a synced file — must be cleaned to prevent stored
+// XSS (e.g. <img onerror=...>, <script>, javascript: hrefs). Keeps only a small
+// set of formatting tags/attributes; drops everything else, including every
+// event handler and any non-http(s)/mailto href.
+const SANITIZE_ALLOWED_TAGS = new Set([
+    'B','I','U','S','STRONG','EM','A','UL','OL','LI','H1','H2','H3',
+    'BLOCKQUOTE','PRE','CODE','BR','DIV','P','SPAN','FONT'
+]);
+const SANITIZE_ALLOWED_ATTRS = {
+    'A': new Set(['href']),
+    'SPAN': new Set(['style']),
+    'FONT': new Set(['color']),
+    'DIV': new Set(['style']),
+    'P': new Set(['style'])
+};
+function sanitizeHtml(dirty) {
+    if (dirty == null) return '';
+    const doc = document.implementation.createHTMLDocument('');
+    const root = doc.body;
+    root.innerHTML = String(dirty);
+    const walk = (node) => {
+        // Iterate over a static copy since we mutate children during traversal
+        Array.from(node.childNodes).forEach(child => {
+            if (child.nodeType === 1) {               // element
+                const tag = child.tagName;
+                if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
+                    // Unwrap disallowed element: keep its (sanitized) children,
+                    // drop the element itself. <script>/<style> get removed whole.
+                    if (tag === 'SCRIPT' || tag === 'STYLE') { child.remove(); return; }
+                    walk(child);
+                    while (child.firstChild) node.insertBefore(child.firstChild, child);
+                    child.remove();
+                    return;
+                }
+                // Strip every attribute not explicitly allowed for this tag
+                const allowed = SANITIZE_ALLOWED_ATTRS[tag] || new Set();
+                Array.from(child.attributes).forEach(attr => {
+                    const name = attr.name.toLowerCase();
+                    if (name.startsWith('on') || !allowed.has(name)) {
+                        child.removeAttribute(attr.name);
+                        return;
+                    }
+                    if (name === 'href') {
+                        const v = (attr.value || '').trim();
+                        // Only http(s) and mailto survive; everything else (javascript:,
+                        // data:, vbscript:, relative) is dropped.
+                        if (!/^(https?:|mailto:)/i.test(v)) child.removeAttribute(attr.name);
+                    }
+                    if (name === 'style') {
+                        // Disallow url()/expression() in inline styles
+                        if (/url\s*\(|expression\s*\(|javascript:/i.test(attr.value || '')) {
+                            child.removeAttribute(attr.name);
+                        }
+                    }
+                });
+                walk(child);
+            } else if (child.nodeType === 8) {        // comment
+                child.remove();
+            }
+        });
+    };
+    walk(root);
+    return root.innerHTML;
+}
+
+// Build a safe anchor element from a URL, validating the scheme. Returns null
+// if the URL isn't http(s). Used by paste/auto-link so URLs never get string-
+// interpolated into innerHTML (which allowed `"`-breakout injection).
+function makeSafeLink(rawUrl) {
+    const url = (rawUrl || '').trim();
+    try {
+        const u = new URL(url);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    } catch (_) { return null; }
+    const a = document.createElement('a');
+    a.href = url;
+    a.textContent = url;
+    return a;
+}
+
 function linkifyEditor() {
     const el = document.getElementById('noteBody');
     if (!el) return;
@@ -4728,10 +4848,28 @@ window.addEventListener('beforeunload', () => {
         // If the pasted text is a single URL, insert it as a link
         if (text && /^https?:\/\/\S+$/i.test(text.trim())) {
             e.preventDefault();
-            const url = text.trim();
-            document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>&nbsp;`);
-            linkifyEditor();
-            saveCurrentNote();
+            const link = makeSafeLink(text.trim());
+            if (link) {
+                // Insert via Range (not string interpolation) so a URL containing
+                // quotes/angle-brackets cannot break out and inject markup.
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    range.insertNode(document.createTextNode('\u00a0'));
+                    range.insertNode(link);
+                    range.setStartAfter(link.nextSibling || link);
+                    range.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+                linkifyEditor();
+                saveCurrentNote();
+            } else {
+                // Not a valid http(s) URL after parsing — fall back to plain text
+                insertPlainText(text);
+                saveCurrentNote();
+            }
             return;
         }
         // Plain-text paste: force when Shift is held (Ctrl+Shift+V) OR when the
@@ -4909,9 +5047,13 @@ if (window.widgetAPI) {
                 downloaded: 'Update ready — restart to apply',
                 none: 'You’re up to date',
                 dev: 'Updates only work in the installed app',
+                manual: 'Updates are installed manually on this platform',
                 error: 'Update check failed',
             };
             if (el) el.textContent = map[status.state] || '';
+            // On manual-update platforms (macOS/Linux) there's nothing to check,
+            // so hide the button rather than offer an action that can't work.
+            if (status.state === 'manual' && btn) btn.style.display = 'none';
             if (status.state === 'error' && status.message) {
                 // Surface the real reason so failures are diagnosable, not opaque
                 if (el) el.textContent = 'Update check failed: ' + status.message.slice(0, 120);
