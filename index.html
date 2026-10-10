@@ -1306,6 +1306,7 @@
                 <div style="flex:1;"></div>
                 <select id="sortSelect" class="sort-select" title="Sort tasks within each section" onchange="setSort(this.value)">
                     <option value="manual">Manual</option>
+                    <option value="wip">WIP first</option>
                     <option value="due">Due date</option>
                     <option value="priority">Priority</option>
                     <option value="created">Newest</option>
@@ -1424,6 +1425,7 @@
                         <div class="fmt-dd-item" onclick="event.stopPropagation(); openTablePicker()">▦ Insert table ▸</div>
                         <div id="tablePicker" style="display:none; padding:6px;"></div>
                         <div class="fmt-dd-item" onclick="fmtCmd('removeFormat'); closeFmtDD();">⌫ Clear formatting</div>
+                        <div class="fmt-dd-item" onclick="pasteAsPlainText(); closeFmtDD();" title="Paste clipboard text without formatting (Ctrl+Shift+V)">📋 Paste as plain text</div>
                     </div>
                 </div>
             </div>
@@ -1478,6 +1480,13 @@
                     <div class="sublabel">Desktop notification at a task's due time (or 9 AM if no time set)</div>
                 </div>
                 <div class="toggle-switch" id="remindersToggle" onclick="toggleRemindersSetting()"></div>
+            </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
+                    <div class="label">Paste as plain text in notes</div>
+                    <div class="sublabel">Strip formatting from pasted text by default (or use Ctrl+Shift+V anytime)</div>
+                </div>
+                <div class="toggle-switch" id="pastePlainToggle" onclick="togglePastePlainText()"></div>
             </div>
             <div class="settings-row" style="margin-top:8px;">
                 <div>
@@ -1583,7 +1592,7 @@
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.5.7';   // keep in sync with package.json
+const APP_VERSION = '1.6.0';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -1597,6 +1606,7 @@ let multiSelectMode = false;
 let selectedIds = new Set();
 let collapsedSections = new Set();  // tracks "group:section" keys that are collapsed
 let dragSectionSrc = null;          // { group, section } when dragging a section header
+let pastePlainTextDefault = false;  // when true, notes paste strips formatting by default
 
 function loadData() {
     try {
@@ -1913,7 +1923,18 @@ function sortTodosInPlace(arr) {
     withIdx.sort((A, B) => {
         const a = A[0], b = B[0];
         let cmp = 0;
-        if (currentSort === 'due') {
+        if (currentSort === 'wip') {
+            // WIP tasks first, then normal, then completed; tie-break by due date
+            const rank = (t) => t.wip ? 0 : (t.completed ? 2 : 1);
+            cmp = rank(a) - rank(b);
+            if (cmp === 0) {
+                const av = a.dueDate ? (a.dueDate + 'T' + (a.dueTime || '23:59')) : null;
+                const bv = b.dueDate ? (b.dueDate + 'T' + (b.dueTime || '23:59')) : null;
+                if (av && bv) cmp = av < bv ? -1 : av > bv ? 1 : 0;
+                else if (av) cmp = -1;
+                else if (bv) cmp = 1;
+            }
+        } else if (currentSort === 'due') {
             // Tasks with a due date first, earliest first; combine date+time
             const av = a.dueDate ? (a.dueDate + 'T' + (a.dueTime || '23:59')) : null;
             const bv = b.dueDate ? (b.dueDate + 'T' + (b.dueTime || '23:59')) : null;
@@ -2744,7 +2765,13 @@ function renderTodoItem(t) {
 function renderSubtasks(t) {
     if (!t.subtasks || !t.subtasks.length) return '';
     return `<div class="subtask-list">` + t.subtasks.map((s, i) => `
-        <div class="subtask-item">
+        <div class="subtask-item" draggable="true"
+             data-task-id="${t.id}" data-sub-index="${i}"
+             ondragstart="onSubtaskDragStart(event, '${t.id}', ${i})"
+             ondragover="onSubtaskDragOver(event, '${t.id}', ${i})"
+             ondragleave="onSubtaskDragLeave(event)"
+             ondrop="onSubtaskDrop(event, '${t.id}', ${i})"
+             ondragend="onSubtaskDragEnd(event)">
             <div class="subtask-check ${s.done ? 'checked' : ''}" onclick="toggleSubtask('${t.id}', ${i})"></div>
             <span class="subtask-text ${s.done ? 'done' : ''}" ondblclick="editSubtask('${t.id}', ${i}, this)">${escapeHtml(s.text)}</span>
             <button class="subtask-del" onclick="deleteSubtask('${t.id}', ${i})" title="Remove">✕</button>
@@ -2785,6 +2812,29 @@ function onTodoDragLeave(e) {
 function onTodoDrop(e, targetId) {
     e.preventDefault();
     e.currentTarget.style.borderTop = '';
+
+    // Case A: a subtask was dropped onto a task row → move it into that task.
+    if (subDrag) {
+        const srcTask = data.todos.find(t => t.id === subDrag.taskId);
+        const dstTask = data.todos.find(t => t.id === targetId);
+        if (srcTask && dstTask && srcTask.subtasks) {
+            const [moved] = srcTask.subtasks.splice(subDrag.index, 1);
+            if (moved) {
+                if (!dstTask.subtasks) dstTask.subtasks = [];
+                dstTask.subtasks.push(moved);
+            }
+        }
+        subDrag = null;
+        saveData();
+        renderTodos();
+        return;
+    }
+
+    // Case B: a task dropped onto another task with Shift held → make it a subtask.
+    if (e.shiftKey && dragSrcId && dragSrcId !== targetId) {
+        if (demoteTaskToSubtask(dragSrcId, targetId)) { dragSrcId = null; return; }
+    }
+
     if (!dragSrcId || dragSrcId === targetId) return;
 
     const srcIdx = data.todos.findIndex(t => t.id === dragSrcId);
@@ -2816,6 +2866,114 @@ function onTodoDragEnd(e) {
     e.currentTarget.style.opacity = '';
     document.querySelectorAll('.todo-item').forEach(el => el.style.borderTop = '');
     dragSrcId = null;
+}
+
+// ===== SUBTASK DRAG =====
+// subDrag = { taskId, index } while a subtask is being dragged; null otherwise.
+let subDrag = null;
+
+function onSubtaskDragStart(e, taskId, index) {
+    e.stopPropagation();                 // don't start a task drag
+    subDrag = { taskId, index };
+    dragSrcId = null;
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', 'subtask'); } catch (_) {}
+    e.currentTarget.style.opacity = '0.4';
+}
+
+function onSubtaskDragOver(e, taskId, index) {
+    if (!subDrag) return;                 // only react to a subtask being dragged
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.style.borderTop = '2px solid var(--accent)';
+}
+
+function onSubtaskDragLeave(e) {
+    e.currentTarget.style.borderTop = '';
+}
+
+function onSubtaskDrop(e, taskId, index) {
+    if (!subDrag) return;
+    e.preventDefault();
+    e.stopPropagation();                  // don't let the task row handle it
+    e.currentTarget.style.borderTop = '';
+
+    const srcTask = data.todos.find(t => t.id === subDrag.taskId);
+    const dstTask = data.todos.find(t => t.id === taskId);
+    if (!srcTask || !dstTask || !srcTask.subtasks) { subDrag = null; return; }
+
+    const [moved] = srcTask.subtasks.splice(subDrag.index, 1);
+    if (!moved) { subDrag = null; return; }
+
+    if (!dstTask.subtasks) dstTask.subtasks = [];
+    // Adjust insert index when moving within the same task past the removed slot
+    let insertAt = index;
+    if (srcTask === dstTask && subDrag.index < index) insertAt = index - 1;
+    dstTask.subtasks.splice(insertAt, 0, moved);
+
+    subDrag = null;
+    saveData();
+    renderTodos();
+}
+
+function onSubtaskDragEnd(e) {
+    e.currentTarget.style.opacity = '';
+    document.querySelectorAll('.subtask-item').forEach(el => el.style.borderTop = '');
+    // If the drop didn't land on a valid target, subDrag may still be set.
+    subDrag = null;
+}
+
+// Promote a dragged subtask into its own top-level task. Called when a subtask
+// is dropped on empty list space (the list container drop zone).
+function promoteSubtaskToTask(dropGroup, dropSection) {
+    if (!subDrag) return false;
+    const srcTask = data.todos.find(t => t.id === subDrag.taskId);
+    if (!srcTask || !srcTask.subtasks || !srcTask.subtasks[subDrag.index]) { subDrag = null; return false; }
+    const sub = srcTask.subtasks.splice(subDrag.index, 1)[0];
+    const newTask = {
+        id: 'id' + Date.now() + Math.random().toString(36).slice(2, 7),
+        text: sub.text || 'New task',
+        completed: !!sub.done,
+        wip: false,
+        priority: 'none',
+        tags: [],
+        dueDate: null,
+        dueTime: null,
+        repeat: 'none',
+        subtasks: [],
+        group: dropGroup != null ? dropGroup : (srcTask.group || ''),
+        section: dropSection != null ? dropSection : (srcTask.section || ''),
+        createdAt: new Date().toISOString()
+    };
+    // Place the new task right after its former parent
+    const parentIdx = data.todos.findIndex(t => t.id === srcTask.id);
+    data.todos.splice(parentIdx + 1, 0, newTask);
+    subDrag = null;
+    saveData();
+    renderTodos();
+    return true;
+}
+
+// Convert an existing top-level task into a subtask of another task.
+// Called from onTodoDrop when a task is dropped onto another task's body
+// with the Shift key held (an explicit "make sub-task" gesture).
+function demoteTaskToSubtask(srcId, dstId) {
+    if (srcId === dstId) return false;
+    const srcIdx = data.todos.findIndex(t => t.id === srcId);
+    const dstTask = data.todos.find(t => t.id === dstId);
+    if (srcIdx === -1 || !dstTask) return false;
+    const src = data.todos[srcIdx];
+    if (!dstTask.subtasks) dstTask.subtasks = [];
+    // Carry the task's own subtasks up as sibling subtasks so none are lost
+    dstTask.subtasks.push({ text: src.text || '', done: !!src.completed });
+    if (src.subtasks && src.subtasks.length) {
+        src.subtasks.forEach(s => dstTask.subtasks.push({ text: s.text, done: !!s.done }));
+    }
+    data.todos.splice(srcIdx, 1);
+    saveData();
+    renderTodos();
+    return true;
 }
 
 // Drop a task onto a section header (moves it into that section)
@@ -3393,6 +3551,58 @@ function updateCharCount() {
 function focusBody() {
     const el = document.getElementById('noteBody');
     el.focus();
+}
+
+// Insert text as plain text at the caret, preserving line breaks but stripping
+// all source formatting. Used by plain-text paste.
+function insertPlainText(text) {
+    focusBody();
+    // Normalize newlines; execCommand('insertText') keeps caret handling + undo.
+    const normalized = text.replace(/\r\n?/g, '\n');
+    if (document.queryCommandSupported && document.queryCommandSupported('insertText')) {
+        document.execCommand('insertText', false, normalized);
+    } else {
+        // Fallback: build text nodes with <br> between lines
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const frag = document.createDocumentFragment();
+        const lines = normalized.split('\n');
+        lines.forEach((line, i) => {
+            if (i > 0) frag.appendChild(document.createElement('br'));
+            frag.appendChild(document.createTextNode(line));
+        });
+        range.insertNode(frag);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+}
+
+// Menu action: read the clipboard and insert it as plain text. Uses the async
+// Clipboard API (a menu click is not a native paste event).
+function pasteAsPlainText() {
+    focusBody();
+    if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(text => {
+            if (text) { insertPlainText(text); saveCurrentNote(); }
+        }).catch(() => {
+            // Permission denied or unavailable — fall back to a hint
+            alert('Press Ctrl+Shift+V to paste as plain text.');
+        });
+    } else {
+        alert('Press Ctrl+Shift+V to paste as plain text.');
+    }
+}
+
+// Toggle the "paste as plain text by default" preference (Settings).
+function togglePastePlainText() {
+    const toggle = document.getElementById('pastePlainToggle');
+    pastePlainTextDefault = !pastePlainTextDefault;
+    if (toggle) toggle.classList.toggle('on', pastePlainTextDefault);
+    if (data.settings) data.settings.pastePlainText = pastePlainTextDefault;
+    saveData();
 }
 
 // Toggle-style inline command (bold, italic, underline, lists, etc.)
@@ -4493,6 +4703,12 @@ if (data.settings && data.settings.sort) {
 if (data.settings && data.settings.filter) {
     currentFilter = data.settings.filter;
 }
+// Restore "paste as plain text" preference
+if (data.settings && typeof data.settings.pastePlainText === 'boolean') {
+    pastePlainTextDefault = data.settings.pastePlainText;
+    const ppt = document.getElementById('pastePlainToggle');
+    if (ppt) ppt.classList.toggle('on', pastePlainTextDefault);
+}
 updateBadge();
 // Always show the app version in Settings (independent of update checks)
 { const vEl = document.getElementById('appVersionText'); if (vEl) vEl.textContent = APP_VERSION; }
@@ -4507,7 +4723,8 @@ window.addEventListener('beforeunload', () => {
     const el = document.getElementById('noteBody');
     if (!el) return;
     el.addEventListener('paste', (e) => {
-        const text = (e.clipboardData || window.clipboardData).getData('text');
+        const cd = e.clipboardData || window.clipboardData;
+        const text = cd.getData('text');
         // If the pasted text is a single URL, insert it as a link
         if (text && /^https?:\/\/\S+$/i.test(text.trim())) {
             e.preventDefault();
@@ -4515,6 +4732,20 @@ window.addEventListener('beforeunload', () => {
             document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>&nbsp;`);
             linkifyEditor();
             saveCurrentNote();
+            return;
+        }
+        // Plain-text paste: force when Shift is held (Ctrl+Shift+V) OR when the
+        // "paste plain text" preference is on. Strips all source formatting.
+        const forcePlain = e.shiftKey || pastePlainTextDefault;
+        const hasHtml = cd.types && Array.prototype.indexOf.call(cd.types, 'text/html') !== -1;
+        if (text && (forcePlain || hasHtml)) {
+            if (forcePlain) {
+                e.preventDefault();
+                insertPlainText(text);
+                saveCurrentNote();
+            }
+            // If not forcing plain but HTML is present, let the browser's default
+            // rich paste proceed (user kept formatting on).
         }
     });
     // Turn typed URLs into links when you press space/enter after them
@@ -4522,6 +4753,65 @@ window.addEventListener('beforeunload', () => {
         if (e.key === ' ' || e.key === 'Enter') {
             autoLinkLastWord();
         }
+    });
+    // Recognize a manually-typed list marker at the start of a line and convert
+    // it to a real list. Typing "1. ", "- ", "* " or "• " then Space triggers it;
+    // the native list then auto-continues numbering/bullets on Enter.
+    el.addEventListener('keydown', (e) => {
+        if (e.key !== ' ') return;
+        maybeStartListFromMarker(e);
+    });
+})();
+
+// If the caret sits right after a bare list marker at the start of its line,
+// strip the marker and start the matching native list. e is the space keydown.
+function maybeStartListFromMarker(e) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== 3) return;              // text node only
+    // Don't re-trigger inside an existing list item
+    if (node.parentElement && node.parentElement.closest('li')) return;
+
+    const before = node.textContent.slice(0, sel.anchorOffset);
+    // Marker must be the ENTIRE line content so far (nothing typed before it)
+    const ordered = /^\s*(\d+)[.)]$/.test(before);
+    const unordered = /^\s*[-*•]$/.test(before);
+    if (!ordered && !unordered) return;
+
+    e.preventDefault();   // swallow the space that would follow the marker
+
+    // Remove the typed marker characters from the text node
+    const markerLen = before.replace(/^\s*/, '').length;    // chars after indent
+    const start = sel.anchorOffset - markerLen;
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, sel.anchorOffset);
+    range.deleteContents();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    // Start the native list — it auto-continues on Enter
+    document.execCommand(ordered ? 'insertOrderedList' : 'insertUnorderedList', false, null);
+    saveCurrentNote();
+    updateToolbarState();
+}
+
+// Allow dropping a dragged subtask onto empty list space to promote it to a
+// top-level task. Only fires when the drop target is the bare container (not a
+// task row, which handles its own drop and stops propagation).
+(function setupSubtaskPromoteZone() {
+    const list = document.getElementById('todoList');
+    if (!list) return;
+    list.addEventListener('dragover', (e) => {
+        if (subDrag) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+    });
+    list.addEventListener('drop', (e) => {
+        if (!subDrag) return;
+        // If the drop landed on a task row, that handler already ran.
+        if (e.target.closest && e.target.closest('.todo-item')) return;
+        e.preventDefault();
+        promoteSubtaskToTask();   // keeps former parent's group/section
     });
 })();
 
