@@ -1,7 +1,7 @@
 {
   "name": "jot",
   "productName": "Jot",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "A draggable, always-on-top todo & notes widget",
   "main": "main.js",
   "author": "rushanwi",
@@ -42,7 +42,9 @@
       "makers": [
         {
           "name": "@electron-forge/maker-squirrel",
-          "platforms": ["win32"],
+          "platforms": [
+            "win32"
+          ],
           "config": {
             "name": "jot",
             "setupExe": "JotSetup.exe",
@@ -51,7 +53,9 @@
         },
         {
           "name": "@electron-forge/maker-dmg",
-          "platforms": ["darwin"],
+          "platforms": [
+            "darwin"
+          ],
           "config": {
             "name": "Jot",
             "icon": "icon.icns"
@@ -59,7 +63,10 @@
         },
         {
           "name": "@electron-forge/maker-zip",
-          "platforms": ["win32", "darwin"]
+          "platforms": [
+            "win32",
+            "darwin"
+          ]
         }
       ]
     }
