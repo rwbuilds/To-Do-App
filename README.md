@@ -38,27 +38,39 @@ Double-click that `.exe` to install. The app then runs from the Start Menu and l
 
 ## Build in the cloud with GitHub Actions (no local setup)
 
-Don't want to install Node or build locally? Let GitHub build the `.exe` for you:
+Don't want to install Node or build locally? Let GitHub build the `.exe` for you.
 
-1. **Create a GitHub repo** (github.com → New repository). It can be private.
-2. **Push this project** to it:
+The repo already includes `.github/workflows/build-windows.yml`. On every push to
+`main` (or `master`), it builds the installer on a Windows runner and publishes a
+version-tagged **GitHub Release**.
+
+> **The repo must be public.** Auto-update relies on the free
+> [update.electronjs.org](https://update.electronjs.org) service, which cannot read
+> private repositories.
+
+To ship a build:
+
+1. Bump `version` in `package.json` **and** the `APP_VERSION` constant in `index.html`
+   (keep them in sync — there's no build step wiring them together).
+2. Commit and push to `main`:
    ```bash
-   git init
    git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/<your-repo>.git
-   git push -u origin main
+   git commit -m "Release vX.Y.Z"
+   git push origin main
    ```
-3. GitHub automatically runs the workflow in `.github/workflows/build-windows.yml` on a Windows machine.
-4. Go to the repo's **Actions** tab → click the latest run → scroll to **Artifacts** → download **`Jot-Windows-Installer`**.
-5. Unzip it, then double-click `JotSetup.exe` to install.
+3. GitHub runs the workflow on a Windows machine. When it finishes, a new Release
+   titled **`Jot vX.Y.Z`** (tag `vX.Y.Z`) appears under the repo's **Releases** section.
 
-You can also trigger a build manually anytime: **Actions** tab → *Build Windows App* → **Run workflow**.
+You can also trigger a build manually: **Actions** tab → *Build Windows App* →
+**Run workflow**.
 
-The workflow produces two artifacts:
-- **Jot-Windows-Installer** — the `.exe` installer
-- **Jot-Windows-Portable** — a zipped app you can run without installing
+Each Release contains the Squirrel distribution files:
+- **`JotSetup.exe`** — the Windows installer
+- **`*.nupkg`** and **`RELEASES`** — the Squirrel update feed that `update-electron-app`
+  reads to detect and apply new versions
+
+Installed clients auto-update from the latest Release; new users download
+`JotSetup.exe` from the newest Release.
 
 ## Optional: custom icon
 Drop a 256×256 PNG named `icon.png` in this folder before building to set the app + tray icon. Without it, a blank tray icon is used.
