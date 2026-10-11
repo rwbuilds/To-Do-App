@@ -17,6 +17,7 @@ let alwaysOnTop = true;
 let isExpanded = false;   // explicit expanded/widget state for reliable blur handling
 let isEditingNote = false; // renderer tells us when a note editor is open
 let suppressCollapse = false; // set briefly during file dialogs / link opens
+let collapseOnBlur = true; // user setting: shrink to the widget when Jot loses focus (renderer sends it on load)
 let snapSuppressUntil = 0;    // ignore snap evaluation briefly after programmatic resizes
 let lastExpandedBounds = null; // remember where/what size the expanded window last was
 
@@ -244,7 +245,7 @@ function createWindow() {
   // an IPC round-trip; also notify the renderer to swap its UI to widget mode.
   mainWindow.on('blur', () => {
     if (!mainWindow || !isExpanded) return;
-    if (isEditingNote || suppressCollapse) return;
+    if (isEditingNote || suppressCollapse || !collapseOnBlur) return;
     collapseToWidgetFromMain();
   });
 
@@ -647,6 +648,11 @@ ipcMain.on('snap-preview', () => {
 });
 
 // Briefly suppress click-away collapse (during file dialogs / link opens)
+// Settings > General > "Collapse when I click away". Default on (the original behaviour).
+ipcMain.on('set-collapse-on-blur', (event, value) => {
+  collapseOnBlur = value !== false;
+});
+
 ipcMain.on('suppress-collapse', () => {
   suppressCollapse = true;
   setTimeout(() => { suppressCollapse = false; }, 1500);

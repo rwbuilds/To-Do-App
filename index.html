@@ -11,7 +11,9 @@
             --surface-hover: #33334a;
             --border: #3a3a52;
             --text: #e2e2f0;
-            --text-dim: #8888a8;
+            --text-dim: #9e9ebb;
+            --on-accent: #ffffff;
+            --accent-text: #9070ff;
             --accent: #7c5cfc;
             --accent-hover: #9070ff;
             --danger: #f06060;
@@ -1255,33 +1257,194 @@
             background: rgba(251, 146, 60, 0.26);
             border-color: var(--warning);
         }
+    /* ===== Design pass 1: theme-safe colors, focus, motion, legibility =====
+       Placed last so these win over the rules above at equal specificity.
+       --on-accent and --accent-text are computed by applyAccentDerived() from the live accent. */
+    .update-banner-action,
+    .note-folder-pill.active,
+    .filter-btn.active,
+    .icon-pill.active,
+    .todo-check.checked::after,
+    .subtask-check.checked::after,
+    .add-btn,
+    #taskbar-btn,
+    .toast button,
+    .group-tab.active,
+    .multi-select-toggle.active,
+    .todo-check.selected::after,
+    .group-tab.active .gt-del:hover { color: var(--on-accent); }
+    .toggle-switch.on::after { background: var(--on-accent); }
+    .parse-chip,
+    .tab.active,
+    .note-editor-body a,
+    .sec-nav-btn:hover,
+    .note-preview-pane a,
+    .fmt-btn.active,
+    .group-more-item.active { color: var(--accent-text); }
+    .parse-chip { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    .parse-chip { border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+    #app { box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 4px 20px color-mix(in srgb, var(--accent) 15%, transparent); }
+    #taskbar-btn { box-shadow: 0 4px 15px color-mix(in srgb, var(--accent) 40%, transparent); }
+    .todo-item.is-selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    .todo-item.completed { opacity: 1; }
+    .todo-item.completed .todo-text { color: var(--text-dim); }
+    .subtask-text.done { opacity: 1; }
+    button:focus-visible, select:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+    .todo-item:focus-within .todo-actions, .note-item:focus-within .note-delete-btn { opacity: 1; }
+    .subtask-item:focus-within .subtask-del { opacity: 0.6; }
+    .sec-nav-btn, .todo-tag, .todo-date, .note-footer .todo-date, .group-header .group-name, .group-header .group-count, .stats-bar { font-size: 11px; }
+    #widget .badge.badge-due { animation-iteration-count: 3; }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+    }
+    /* ===== Design pass 2: Mac title-bar layout, visible switch state, priority labels ===== */
+    body.platform-mac .titlebar { justify-content: flex-start; gap: 12px; }
+    body.platform-mac .titlebar-btns { order: -1; flex-direction: row-reverse; }
+    .toggle-switch:not(.on) { box-shadow: inset 0 0 0 1.5px var(--text-dim); }
+    .todo-priority { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; color: var(--text-dim); }
+    .prio-high .prio-flag { color: var(--danger); }
+    .prio-medium .prio-flag { color: var(--warning); }
+    .prio-low .prio-flag { color: var(--text-dim); }
+    .todo-item.priority-low { border-left-color: var(--text-dim); }
+    /* ===== Design pass 3: flat task rows =====
+       Rows drop the per-task card: no fill or border until hover/focus, tighter spacing.
+       Priority keeps its left edge; selection keeps the accent (inline style); drag feedback is an inline border-top. */
+    .todo-item { background: transparent; border-color: transparent; border-radius: 8px; padding: 7px 10px; margin-bottom: 2px; }
+    .todo-item:hover, .todo-item:focus-within { background: var(--surface); border-color: transparent; }
+    .todo-item.priority-high, .todo-item.priority-high:hover, .todo-item.priority-high:focus-within { border-left-color: var(--danger); }
+    .todo-item.priority-medium, .todo-item.priority-medium:hover, .todo-item.priority-medium:focus-within { border-left-color: var(--warning); }
+    .todo-item.priority-low, .todo-item.priority-low:hover, .todo-item.priority-low:focus-within { border-left-color: var(--text-dim); }
+    /* Bigger click targets for the checkboxes without changing how they look */
+    .todo-check, .subtask-check { position: relative; }
+    .todo-check::before { content: ''; position: absolute; inset: -6px; }
+    .subtask-check::before { content: ''; position: absolute; inset: -3px -6px; }
+    /* ===== Design pass 4: always-visible row menu button ===== */
+    .todo-more-btn { width: 24px; height: 24px; flex-shrink: 0; border: none; border-radius: 5px; background: transparent; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .todo-more-btn:hover { background: var(--border); color: var(--text); }
+    /* ===== Design pass 5: one toolbar row =====
+       Below 600px wide the five filter pills (which overflow at the default 440px) become a
+       dropdown driving the same setFilter(); wider windows keep the pills. */
+    .filter-select { display: none; color: var(--text); font-weight: 600; }
+    @media (max-width: 599px) {
+        .filter-pills .filter-btn { display: none; }
+        .filter-pills .filter-select { display: inline-block; }
+    }
+    /* ===== Design pass 6: notes editor layout ===== */
+    .note-editor-head { display: flex; align-items: center; gap: 2px; padding-left: 8px; border-bottom: 1px solid var(--border); }
+    .note-editor-head .note-editor-title { flex: 1; min-width: 0; border-bottom: none; padding-left: 6px; }
+    .note-back-btn { padding: 4px 9px; font-size: 14px; }
+    /* Comfortable line length in wide windows; 14px edges when narrow */
+    .note-editor-body { padding-left: max(14px, calc((100% - 68ch) / 2)); padding-right: max(14px, calc((100% - 68ch) / 2)); }
+    :is(.note-editor-body, .note-preview-pane) h3 { font-size: 15px; margin: 8px 0 6px; font-weight: 700; }
+    :is(.note-editor-body, .note-preview-pane) blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--border); color: var(--text-dim); }
+    :is(.note-editor-body, .note-preview-pane) code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; background: var(--surface); border-radius: 4px; padding: 1px 4px; }
+    :is(.note-editor-body, .note-preview-pane) pre { margin: 8px 0; padding: 8px 10px; background: var(--surface); border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+    :is(.note-editor-body, .note-preview-pane) pre code { padding: 0; background: none; }
+    :is(.note-editor-body, .note-preview-pane) hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+    :is(.note-editor-body, .note-preview-pane) th { background: var(--surface); font-weight: 600; text-align: left; }
+    :is(.note-editor-body, .note-preview-pane) :is(td, th) { vertical-align: top; }
+    /* Active format buttons get a fill, not just a colour change (some have inline backgrounds) */
+    .fmt-btn.active { background: color-mix(in srgb, var(--accent) 18%, transparent) !important; }
+    /* Notes list: two-line preview, room for the hover delete button, visible overflow on folders */
+    .note-preview { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .note-item .note-title { padding-right: 28px; }
+    .note-folder-bar::-webkit-scrollbar { height: 3px; }
+    .note-folder-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    /* ===== Design pass 7: clean paste (pasted tables carry only class="note-table") ===== */
+    :is(.note-editor-body, .note-preview-pane) table.note-table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+    :is(.note-editor-body, .note-preview-pane) table.note-table :is(td, th) { border: 1px solid var(--border); padding: 6px; min-width: 30px; }
+    /* ===== Design pass 8: one SVG icon set (replaces emoji; follows the theme colour) ===== */
+    .ic { width: 1em; height: 1em; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.14em; }
+    .ic-lead { margin-right: 0.5em; }
+    .ic-trail { margin-left: auto; padding-left: 0.6em; opacity: 0.7; }
+    .context-menu-item:has(.ic-trail) { display: flex; align-items: center; }
+    .titlebar-btn .ic, .icon-pill .ic { width: 15px; height: 15px; }
+    .tab.settings-tab .ic { width: 15px; height: 15px; vertical-align: -0.2em; }
+    .todo-action-btn .ic { width: 14px; height: 14px; }
+    .todo-more-btn .ic { width: 16px; height: 16px; }
+    .brand-mark { margin-right: 6px; color: var(--accent-text); }
+    #widget .widget-icon .ic { width: 26px; height: 26px; color: var(--on-accent); stroke-width: 2.2; }
+    .empty-state .icon .ic { width: 40px; height: 40px; stroke-width: 1.5; opacity: 0.8; }
+    .prio-flag .ic { width: 12px; height: 12px; vertical-align: -0.12em; }
+    .prio-c-high { color: var(--danger); }
+    .prio-c-medium { color: var(--warning); }
+    .prio-c-low { color: var(--text-dim); }
+    /* ===== Design pass 8b: icon sizes for the editor, Settings, banner and generated markup ===== */
+    .fmt-dd-item:has(.ic-trail) { display: flex; align-items: center; }
+    .ic-caret { width: 10px; height: 10px; margin-left: 3px; opacity: 0.7; }
+    .fmt-btn .ic, .note-back-btn .ic { width: 15px; height: 15px; }
+    .update-banner-icon .ic { width: 16px; height: 16px; }
+    .gt-del .ic, .subtask-del .ic { width: 10px; height: 10px; }
+    .note-delete-btn .ic { width: 13px; height: 13px; }
+    .note-folder-pill .ic, .parse-chip .ic, .todo-tag .ic { width: 12px; height: 12px; }
+    .todo-action-btn[title^="Delete g"] .ic, .todo-action-btn[title^="Delete s"] .ic { width: 11px; height: 11px; }
+    /* ===== Design pass 9: keyboard-focused task-menu item ===== */
+    .context-menu-item:focus { outline: none; }
+    .context-menu-item:focus-visible { outline: none; background: var(--surface-hover); box-shadow: inset 2px 0 0 var(--accent); }
     </style>
 </head>
 <body>
+<svg id="jot-icons" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol>
+<symbol id="i-shrink" viewBox="0 0 24 24"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="m14 10 7-7"/><path d="m3 21 7-7"/></symbol>
+<symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
+<symbol id="i-square-check" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-list-checks" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></symbol>
+<symbol id="i-list-plus" viewBox="0 0 24 24"><path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></symbol>
+<symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+<symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></symbol>
+<symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+<symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></symbol>
+<symbol id="i-clipboard" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
+<symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+<symbol id="i-table" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M12 3v18"/></symbol>
+<symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+<symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="m6 6 2.5 2.5"/><path d="m15.5 15.5 2.5 2.5"/><path d="m18 6-2.5 2.5"/><path d="m8.5 15.5-2.5 2.5"/></symbol>
+</defs></svg>
 
 <!-- Widget (collapsed) -->
 <div id="widget" onclick="expandApp()" title="Jot">
-    <span class="widget-icon">✍️</span>
+    <span class="widget-icon"><svg class="ic" aria-hidden="true"><use href="#i-pen"/></svg></span>
     <span class="badge hidden" id="badge">0</span>
 </div>
 
 <!-- Taskbar button (minimized) -->
 <button id="taskbar-btn" onclick="restoreApp()">
-    ✍️ Jot
+    <svg class="ic brand-mark" aria-hidden="true"><use href="#i-pen"/></svg>Jot
 </button>
 
 <!-- Expanded App -->
 <div id="app">
     <div class="resize-grip" id="resizeGrip" title="Drag to resize"></div>
     <div class="titlebar" id="titlebar">
-        <h1>✍️ Jot</h1>
+        <h1><svg class="ic brand-mark" aria-hidden="true"><use href="#i-pen"/></svg>Jot</h1>
         <div class="titlebar-btns">
-            <button class="titlebar-btn" id="backupBtn" onclick="exportData()" title="Backup to file">⤓</button>
-            <button class="titlebar-btn" id="restoreBtn" onclick="guardBlur(); document.getElementById('importFile').click()" title="Restore from file">⤒</button>
-            <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at Windows startup" style="display:none;">⏻</button>
-            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize to taskbar">﹣</button>
-            <button class="titlebar-btn" onclick="collapseToWidget()" title="Shrink to widget">❐</button>
-            <button class="titlebar-btn close" onclick="closeApp()" title="Close Jot">✕</button>
+            <button class="titlebar-btn" id="autoLaunchBtn" onclick="toggleAutoLaunch()" title="Launch at startup" style="display:none;"><svg class="ic" aria-hidden="true"><use href="#i-power"/></svg></button>
+            <button class="titlebar-btn" onclick="minimizeToTaskbar()" title="Minimize" aria-label="Minimize"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+            <button class="titlebar-btn" onclick="collapseToWidget()" title="Shrink to widget" aria-label="Shrink to widget"><svg class="ic" aria-hidden="true"><use href="#i-shrink"/></svg></button>
+            <button class="titlebar-btn close" onclick="closeApp()" title="Close Jot" aria-label="Close Jot"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
         </div>
     </div>
     <input type="file" id="importFile" accept="application/json" style="display:none;" onchange="importData(event)">
@@ -1290,7 +1453,7 @@
         <button class="tab active" data-tab="todos" onclick="switchTab('todos')">Tasks</button>
         <button class="tab" data-tab="notes" onclick="switchTab('notes')">Notes</button>
         <div style="flex:1;"></div>
-        <button class="tab settings-tab" onclick="openSettings()" title="Settings">⚙</button>
+        <button class="tab settings-tab" onclick="openSettings()" title="Settings" aria-label="Settings"><svg class="ic" aria-hidden="true"><use href="#i-cog"/></svg></button>
     </div>
 
     <!-- TODOS TAB -->
@@ -1303,6 +1466,13 @@
                 <button class="filter-btn" id="filterWip" onclick="setFilter('wip')">WIP</button>
                 <button class="filter-btn" id="filterDone" onclick="setFilter('done')">Completed</button>
                 <button class="filter-btn" id="filterArchived" onclick="setFilter('archived')">Archived</button>
+                <select id="filterSelect" class="sort-select filter-select" title="Show tasks" aria-label="Show tasks" onchange="setFilter(this.value)">
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="wip">WIP</option>
+                    <option value="done">Completed</option>
+                    <option value="archived">Archived</option>
+                </select>
                 <div style="flex:1;"></div>
                 <select id="sortSelect" class="sort-select" title="Sort tasks within each section" onchange="setSort(this.value)">
                     <option value="manual">Manual</option>
@@ -1319,7 +1489,7 @@
         <div class="group-bar" style="display:flex; flex-direction:row; align-items:flex-start; gap:6px;">
             <div class="group-tabs" id="groupTabs" style="display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:6px; flex:1; min-width:0;"></div>
             <button class="icon-pill" id="addGroupBtn" onclick="promptAddGroup()" title="Add group">+</button>
-            <button class="icon-pill multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()" title="Select multiple">☑</button>
+            <button class="icon-pill multi-select-toggle" id="multiSelectBtn" onclick="toggleMultiSelect()" title="Select multiple" aria-label="Select multiple"><svg class="ic" aria-hidden="true"><use href="#i-square-check"/></svg></button>
         </div>
         <input type="hidden" id="groupFilter" value="all">
 
@@ -1362,7 +1532,7 @@
         </div>
 
         <div class="add-bar">
-            <button class="icon-pill" id="optionsToggle" onclick="toggleAddOptions()" title="More options">⚙</button>
+            <button class="icon-pill" id="optionsToggle" onclick="toggleAddOptions()" title="More options" aria-label="More task options"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
             <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (try: tomorrow 5pm #home)" oninput="updateParsePreview()" onkeydown="if(event.key==='Enter')addTodo()">
             <button class="add-btn" onclick="addTodo()">Add</button>
         </div>
@@ -1384,7 +1554,10 @@
         <div class="content" id="noteList"></div>
         
         <div class="note-editor" id="noteEditor">
-            <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
+            <div class="note-editor-head">
+                <button class="filter-btn note-back-btn" onclick="closeNoteEditor()" title="Back to notes" aria-label="Back to notes"><svg class="ic" aria-hidden="true"><use href="#i-arrow-left"/></svg></button>
+                <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
+            </div>
             <div class="note-meta-row">
                 <select id="noteFolderSelect" onchange="onNoteFolderChange()" title="Folder"></select>
                 <input type="text" id="noteTagsInput" class="note-tags-input" placeholder="tags (comma separated)" oninput="onNoteTagsChange()" title="Comma-separated tags">
@@ -1393,7 +1566,7 @@
                 <!-- Heading dropdown -->
                 <div class="fmt-dd" style="position:relative;">
                     <button class="fmt-btn" style="height:30px; padding:0 9px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:3px;" onclick="event.stopPropagation(); toggleFmtDD('ddHeading')" title="Text style">
-                        <span id="ddHeadingLabel">Normal</span> <span style="font-size:8px;">▾</span>
+                        <span id="ddHeadingLabel">Normal</span><svg class="ic ic-caret" aria-hidden="true"><use href="#i-chevron-down"/></svg>
                     </button>
                     <div class="fmt-dd-menu" id="ddHeading" style="display:none; position:absolute; top:110%; left:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,0.4); z-index:1000; flex-direction:column; gap:2px; min-width:140px; white-space:nowrap;">
                         <div class="fmt-dd-item" onclick="fmtBlock('P'); closeFmtDD();">Normal</div>
@@ -1405,7 +1578,7 @@
                 <!-- List dropdown -->
                 <div class="fmt-dd" style="position:relative;">
                     <button class="fmt-btn" style="height:30px; padding:0 9px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:3px;" onclick="event.stopPropagation(); toggleFmtDD('ddList')" title="Lists">
-                        ☰ <span style="font-size:8px;">▾</span>
+                        <svg class="ic" aria-hidden="true"><use href="#i-list"/></svg><svg class="ic ic-caret" aria-hidden="true"><use href="#i-chevron-down"/></svg>
                     </button>
                     <div class="fmt-dd-menu" id="ddList" style="display:none; position:absolute; top:110%; left:0; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,0.4); z-index:1000; flex-direction:column; gap:2px; min-width:140px; white-space:nowrap;">
                         <div class="fmt-dd-item" onclick="fmtCmd('insertUnorderedList'); closeFmtDD();">• Bullet list</div>
@@ -1416,24 +1589,26 @@
                 <button class="fmt-btn" data-cmd="bold" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtCmd('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
                 <button class="fmt-btn" data-cmd="italic" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtCmd('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
                 <button class="fmt-btn" data-cmd="strikeThrough" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtCmd('strikeThrough')" title="Strikethrough"><s>S</s></button>
-                <button class="fmt-btn" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtLink()" title="Insert link">🔗</button>
+                <button class="fmt-btn" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="fmtLink()" title="Insert link"><svg class="ic" aria-hidden="true"><use href="#i-link"/></svg></button>
                 <!-- More menu -->
                 <div class="fmt-dd" style="position:relative;">
-                    <button class="fmt-btn" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="event.stopPropagation(); toggleFmtDD('ddMore')" title="More">⋯</button>
+                    <button class="fmt-btn" style="height:30px; min-width:30px; border:none; border-radius:6px; background:transparent; color:var(--text); font-size:13px; cursor:pointer;" onclick="event.stopPropagation(); toggleFmtDD('ddMore')" title="More"><svg class="ic" aria-hidden="true"><use href="#i-ellipsis"/></svg></button>
                     <div class="fmt-dd-menu" id="ddMore" style="display:none; position:absolute; top:110%; right:0; left:auto; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,0.4); z-index:1000; flex-direction:column; gap:2px; min-width:160px; white-space:nowrap;">
                         <div class="fmt-dd-item" data-cmd="underline" onclick="fmtCmd('underline'); closeFmtDD();"><u>Underline</u></div>
-                        <div class="fmt-dd-item" onclick="event.stopPropagation(); openTablePicker()">▦ Insert table ▸</div>
+                        <div class="fmt-dd-item" onclick="event.stopPropagation(); openTablePicker()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-table"/></svg>Insert table<svg class="ic ic-trail" aria-hidden="true"><use href="#i-chevron-right"/></svg></div>
                         <div id="tablePicker" style="display:none; padding:6px;"></div>
-                        <div class="fmt-dd-item" onclick="fmtCmd('removeFormat'); closeFmtDD();">⌫ Clear formatting</div>
-                        <div class="fmt-dd-item" onclick="pasteAsPlainText(); closeFmtDD();" title="Paste clipboard text without formatting (Ctrl+Shift+V)">📋 Paste as plain text</div>
+                        <div class="fmt-dd-item" onclick="fmtCmd('removeFormat'); closeFmtDD();"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-eraser"/></svg>Clear formatting</div>
+                        <div class="fmt-dd-item" onclick="pasteAsPlainText(); closeFmtDD();" title="Paste clipboard text without formatting (Ctrl+Shift+V)"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-clipboard"/></svg>Paste as plain text</div>
+                        <div class="fmt-dd-item" onclick="exportCurrentNote('txt'); closeFmtDD();" title="Export as plain text"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-download"/></svg>Export as .txt</div>
+                        <div class="fmt-dd-item" onclick="exportCurrentNote('md'); closeFmtDD();" title="Export as Markdown (keeps formatting)"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-download"/></svg>Export as .md</div>
                     </div>
                 </div>
             </div>
             <div class="note-find-bar" id="noteFindBar" style="display:none;">
                 <input type="text" id="noteFindInput" placeholder="Find in note…" class="search-input" style="flex:1;" oninput="noteFind()" onkeydown="if(event.key==='Enter')noteFindNext(); if(event.key==='Escape')closeNoteFind();">
                 <span id="noteFindCount" style="font-size:11px;color:var(--text-dim);white-space:nowrap;">0/0</span>
-                <button class="filter-btn" onclick="noteFindNext()" title="Next (Enter)">▾</button>
-                <button class="filter-btn" onclick="closeNoteFind()" title="Close (Esc)">✕</button>
+                <button class="filter-btn" onclick="noteFindNext()" title="Next (Enter)" aria-label="Next match"><svg class="ic" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+                <button class="filter-btn" onclick="closeNoteFind()" title="Close (Esc)" aria-label="Close find"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
             </div>
             <div class="note-editor-body" id="noteBody" contenteditable="true"
                  spellcheck="true"
@@ -1443,10 +1618,7 @@
                  onmouseup="updateToolbarState()"
                  onblur="linkifyEditor(); saveCurrentNote();"></div>
             <div class="add-bar">
-                <button class="filter-btn" onclick="closeNoteEditor()">← Back</button>
-                <button class="filter-btn" onclick="exportCurrentNote('txt')" title="Export as plain text">⇩ .txt</button>
-                <button class="filter-btn" onclick="exportCurrentNote('md')" title="Export as Markdown (keeps formatting)">⇩ .md</button>
-                <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:right;" id="noteCharCount">0 words</span>
+                <span style="flex:1;font-size:11px;color:var(--text-dim);text-align:left;" id="noteCharCount">0 words</span>
                 <button class="filter-btn" style="color:var(--danger);" onclick="deleteCurrentNote()">Delete</button>
             </div>
         </div>
@@ -1470,7 +1642,7 @@
             <div class="settings-row">
                 <div>
                     <div class="label">Launch at startup</div>
-                    <div class="sublabel">Open Jot automatically when Windows starts</div>
+                    <div class="sublabel">Open Jot automatically when you sign in</div>
                 </div>
                 <div class="toggle-switch" id="startupToggle" onclick="toggleStartupSetting()"></div>
             </div>
@@ -1483,10 +1655,24 @@
             </div>
             <div class="settings-row" style="margin-top:8px;">
                 <div>
+                    <div class="label">Collapse when I click away</div>
+                    <div class="sublabel">Shrink back to the widget when you click another app. Turn off to keep Jot open beside your work.</div>
+                </div>
+                <div class="toggle-switch" id="collapseBlurToggle" onclick="toggleCollapseOnBlur()"></div>
+            </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
                     <div class="label">Paste as plain text in notes</div>
                     <div class="sublabel">Strip formatting from pasted text by default (or use Ctrl+Shift+V anytime)</div>
                 </div>
                 <div class="toggle-switch" id="pastePlainToggle" onclick="togglePastePlainText()"></div>
+            </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
+                    <div class="label">Keep original formatting when pasting</div>
+                    <div class="sublabel">When off, pasted text keeps headings, lists, bold, links and tables but takes Jot's fonts and colors.</div>
+                </div>
+                <div class="toggle-switch" id="pasteKeepFmtToggle" onclick="togglePasteKeepFormatting()"></div>
             </div>
             <div class="settings-row" style="margin-top:8px;">
                 <div>
@@ -1499,10 +1685,10 @@
         <div class="settings-section">
             <h3>Data</h3>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button class="filter-btn" onclick="exportData()">⤓ Backup to file</button>
-                <button class="filter-btn" onclick="document.getElementById('importFile').click()">⤒ Restore from file</button>
-                <button class="filter-btn" onclick="openBackupsFolder()">📂 Auto-backups</button>
-                <button class="filter-btn delete-selected-btn" onclick="resetAllData()">↺ Reset to defaults</button>
+                <button class="filter-btn" onclick="exportData()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-download"/></svg>Backup to file</button>
+                <button class="filter-btn" onclick="document.getElementById('importFile').click()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-upload"/></svg>Restore from file</button>
+                <button class="filter-btn" onclick="openBackupsFolder()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-folder"/></svg>Auto-backups</button>
+                <button class="filter-btn delete-selected-btn" onclick="resetAllData()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-rotate-ccw"/></svg>Reset to defaults</button>
             </div>
             <div class="sublabel" style="margin-top:8px;">Jot auto-saves a daily backup (keeps the last 7). Backups include all tasks, notes, groups, sections &amp; settings.</div>
         </div>
@@ -1517,34 +1703,34 @@
 
 <!-- Update banner (subtle, dismissable) -->
 <div class="update-banner" id="updateBanner">
-    <span class="update-banner-icon">✨</span>
+    <span class="update-banner-icon"><svg class="ic" aria-hidden="true"><use href="#i-sparkle"/></svg></span>
     <span class="update-banner-text" id="updateBannerText">A new version is available</span>
     <button class="update-banner-action" id="updateBannerAction" onclick="onUpdateBannerAction()">Restart</button>
-    <button class="update-banner-close" onclick="dismissUpdateBanner()" title="Dismiss">✕</button>
+    <button class="update-banner-close" onclick="dismissUpdateBanner()" title="Dismiss" aria-label="Dismiss"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
 </div>
 
 <!-- Context Menu -->
 <div class="context-menu" id="contextMenu">
-    <div class="context-menu-item" onclick="ctxToggleWip()">🔧 Toggle WIP</div>
+    <div class="context-menu-item" onclick="ctxToggleWip()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-wrench"/></svg>Toggle WIP</div>
     <div class="separator"></div>
-    <div class="context-menu-item" id="ctxPrioHigh" onclick="ctxSetPriority('high')">🔴 High Priority</div>
-    <div class="context-menu-item" id="ctxPrioMedium" onclick="ctxSetPriority('medium')">🟡 Medium Priority</div>
-    <div class="context-menu-item" id="ctxPrioLow" onclick="ctxSetPriority('low')">🟢 Low Priority</div>
+    <div class="context-menu-item" id="ctxPrioHigh" onclick="ctxSetPriority('high')"><svg class="ic ic-lead prio-c-high" aria-hidden="true"><use href="#i-flag"/></svg>High Priority</div>
+    <div class="context-menu-item" id="ctxPrioMedium" onclick="ctxSetPriority('medium')"><svg class="ic ic-lead prio-c-medium" aria-hidden="true"><use href="#i-flag"/></svg>Medium Priority</div>
+    <div class="context-menu-item" id="ctxPrioLow" onclick="ctxSetPriority('low')"><svg class="ic ic-lead prio-c-low" aria-hidden="true"><use href="#i-flag"/></svg>Low Priority</div>
     <div class="separator"></div>
     <div class="context-menu-sub" id="ctxGroupSub">
-        <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxGroupMenu()">📁 Move to Group ▸</div>
+        <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxGroupMenu()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-folder"/></svg>Move to Group<svg class="ic ic-trail" aria-hidden="true"><use href="#i-chevron-right"/></svg></div>
         <div class="context-sub-menu" id="ctxGroupMenu"></div>
     </div>
     <div class="context-menu-sub" id="ctxSectionSub">
-        <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxSectionMenu()">📂 Move to Section ▸</div>
+        <div class="context-menu-item" onclick="event.stopPropagation(); toggleCtxSectionMenu()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-list"/></svg>Move to Section<svg class="ic ic-trail" aria-hidden="true"><use href="#i-chevron-right"/></svg></div>
         <div class="context-sub-menu" id="ctxSectionMenu"></div>
     </div>
     <div class="separator"></div>
-    <div class="context-menu-item" onclick="ctxEditSchedule()">📅 Edit date / repeat</div>
-    <div class="context-menu-item" id="ctxArchive" onclick="ctxToggleArchive()">🗄️ Archive</div>
-    <div class="context-menu-item" onclick="ctxDuplicate()">📄 Duplicate</div>
-    <div class="context-menu-item" onclick="ctxCopy()">📋 Copy Text</div>
-    <div class="context-menu-item danger" onclick="ctxDelete()">🗑️ Delete</div>
+    <div class="context-menu-item" onclick="ctxEditSchedule()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-calendar"/></svg>Edit date / repeat</div>
+    <div class="context-menu-item" id="ctxArchive" onclick="ctxToggleArchive()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-archive"/></svg>Archive</div>
+    <div class="context-menu-item" onclick="ctxDuplicate()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-copy"/></svg>Duplicate</div>
+    <div class="context-menu-item" onclick="ctxCopy()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-clipboard"/></svg>Copy Text</div>
+    <div class="context-menu-item danger" onclick="ctxDelete()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-trash"/></svg>Delete</div>
 </div>
 
 <!-- Edit schedule (date / time / repeat) modal -->
@@ -1592,7 +1778,7 @@
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.6.2';   // keep in sync with package.json
+const APP_VERSION = '1.6.3';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -1607,6 +1793,7 @@ let selectedIds = new Set();
 let collapsedSections = new Set();  // tracks "group:section" keys that are collapsed
 let dragSectionSrc = null;          // { group, section } when dragging a section header
 let pastePlainTextDefault = false;  // when true, notes paste strips formatting by default
+let plainPasteShortcut = false;     // set by Ctrl/Cmd+Shift+V keydown, read by the paste handler
 
 function loadData() {
     try {
@@ -1785,6 +1972,12 @@ function undoLastDelete() {
         lastDeleted.items.forEach(({ item, index }) => {
             data.notes.splice(Math.min(index, data.notes.length), 0, item);
         });
+    } else if (lastDeleted.type === 'demote') {
+        // Put the demoted task back and remove the subtasks the demote added
+        const { item, index, dstId, prevSubtasks } = lastDeleted;
+        const dst = data.todos.find(t => t.id === dstId);
+        if (dst) dst.subtasks = prevSubtasks;
+        data.todos.splice(Math.min(index, data.todos.length), 0, item);
     }
     saveData();
     renderTodos();
@@ -1895,6 +2088,12 @@ function switchTab(tab) {
 }
 
 // ===== FILTERS =====
+// Keeps the compact filter dropdown (narrow windows) in step with currentFilter.
+function syncFilterSelect() {
+    const sel = document.getElementById('filterSelect');
+    if (sel && sel.value !== currentFilter) sel.value = currentFilter;
+}
+
 function setFilter(filter) {
     currentFilter = filter;
     document.getElementById('filterAll').classList.toggle('active', filter === 'all');
@@ -1902,6 +2101,7 @@ function setFilter(filter) {
     document.getElementById('filterWip').classList.toggle('active', filter === 'wip');
     document.getElementById('filterDone').classList.toggle('active', filter === 'done');
     document.getElementById('filterArchived').classList.toggle('active', filter === 'archived');
+    syncFilterSelect();
     if (data.settings) data.settings.filter = filter;   // remember across restarts
     renderTodos();
 }
@@ -2096,7 +2296,7 @@ function updateParsePreview() {
     if (effDate) {
         let label = formatDate(effDate);
         if (effTime) label += ' · ' + formatTime(effTime);
-        chips.push(`<span class="parse-chip">📅 ${label}</span>`);
+        chips.push(`<span class="parse-chip">${ic('calendar')} ${label}</span>`);
     }
     tags.forEach(t => chips.push(`<span class="parse-chip tag-chip">#${escapeHtml(t)}</span>`));
 
@@ -2247,7 +2447,7 @@ function renderGroupTabs() {
              ondragleave="this.style.outline='';"
              ondrop="event.preventDefault(); this.style.outline=''; dropOnGroupTab('${t.key.replace(/'/g, "\\'")}');">
             <span>${escapeHtml(t.label)}</span>
-            ${t.deletable ? `<span class="gt-del" style="font-size:10px; opacity:0.6; cursor:pointer;" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">✕</span>` : ''}
+            ${t.deletable ? `<span class="gt-del" style="font-size:10px; opacity:0.6; cursor:pointer;" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">${ic('x')}</span>` : ''}
         </div>`;
     };
 
@@ -2492,7 +2692,7 @@ function renderTodos() {
     container.classList.toggle('multi-select-mode', multiSelectMode);
 
     if (todos.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">${currentFilter === 'done' ? '🎉' : currentFilter === 'wip' ? '🔧' : '✨'}</div><p>${currentFilter === 'done' ? 'No completed tasks yet' : currentFilter === 'wip' ? 'Nothing in progress' : 'No tasks — add one below!'}</p></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="icon">${ic(currentFilter === 'done' ? 'circle-check' : currentFilter === 'wip' ? 'wrench' : 'inbox')}</div><p>${currentFilter === 'done' ? 'No completed tasks yet' : currentFilter === 'wip' ? 'Nothing in progress' : 'No tasks — add one below!'}</p></div>`;
     } else {
         // Group tasks by their group field
         const grouped = {};
@@ -2573,7 +2773,7 @@ function renderTodos() {
         if (noteMatches > 0) {
             const hint = document.createElement('div');
             hint.style.cssText = 'padding:8px 12px; margin:4px 0; font-size:12px; color:var(--accent); cursor:pointer; text-align:center;';
-            hint.innerHTML = `🔍 ${noteMatches} matching note${noteMatches > 1 ? 's' : ''} → View in Notes`;
+            hint.innerHTML = `${ic('search')} ${noteMatches} matching note${noteMatches > 1 ? 's' : ''} → View in Notes`;
             hint.onclick = () => { const q = document.getElementById('searchTodos').value; switchTab('notes'); document.getElementById('searchNotes').value = q; renderNotes(); };
             container.appendChild(hint);
         }
@@ -2587,14 +2787,14 @@ function renderTodos() {
     const overdue = activeTodos.filter(t => t.dueDate && !t.completed && new Date(t.dueDate) < new Date()).length;
     document.getElementById('todoStats').innerHTML = `
         <span>${done}/${total} done · ${wip} WIP</span>
-        <span>${overdue > 0 ? `⚠️ ${overdue} overdue` : '✓ All on track'}</span>
+        <span>${overdue > 0 ? `${ic('alert')} ${overdue} overdue` : `${ic('check')} All on track`}</span>
     `;
 
     updateSelectedCount();
 }
 
 function renderGroupHeader(name, count, ungrouped) {
-    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:18px;height:18px;flex-shrink:0;">✕</button>`;
+    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:18px;height:18px;flex-shrink:0;">${ic('x')}</button>`;
     const addSecBtn = ungrouped ? '' : `<button class="todo-action-btn" onclick="promptAddSection('${escapeHtml(name)}')" title="Add section" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">+</button>`;
 
     // Collapse/expand-all toggle (only if the group has sections)
@@ -2626,14 +2826,14 @@ function renderSectionHeader(groupName, sectionName, count, isGeneral) {
     const secId = isGeneral ? '__general__' : sectionName;
     const key = groupName + ':' + secId;
     const isCollapsed = collapsedSections.has(key);
-    const arrow = isCollapsed ? '▸' : '▾';
+    const arrow = ic(isCollapsed ? 'chevron-right' : 'chevron-down', 'ic-caret');
     const dragAttrs = isGeneral ? '' : `draggable="true"
          data-group="${escapeHtml(groupName)}" data-section="${escapeHtml(sectionName)}"
          ondragstart="onSectionDragStart(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')"
          ondragover="event.preventDefault(); autoScrollDuringDrag(event); this.style.borderBottom='2px solid var(--accent)';"
          ondragleave="this.style.borderBottom='';"
          ondrop="event.preventDefault(); this.style.borderBottom=''; onSectionOrTaskDrop(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}');"`;
-    const delBtn = isGeneral ? '' : `<button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">✕</button>`;
+    const delBtn = isGeneral ? '' : `<button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">${ic('x')}</button>`;
     const nameColor = isGeneral ? 'var(--text-dim)' : 'var(--accent)';
     return `<div class="section-header" data-anchor="${escapeHtml(groupName + '::' + secId)}" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px; ${isGeneral ? '' : 'cursor:grab;'}"
          ${dragAttrs}>
@@ -2716,14 +2916,20 @@ function refreshSectionSelect() {
         sections.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 }
 
+// One icon set for the whole app: SVG symbols in #jot-icons, drawn in the current text colour.
+function ic(name, cls) {
+    return `<svg class="ic${cls ? ' ' + cls : ''}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
 function renderTodoItem(t) {
     const priorityClass = t.priority !== 'none' && t.priority ? `priority-${t.priority}` : '';
+    const priorityLabel = ({ high: 'High', medium: 'Medium', low: 'Low' })[t.priority] || '';
     const isOverdue = t.dueDate && !t.completed && new Date(t.dueDate) < new Date();
     const isSelected = selectedIds.has(t.id);
     // Selected state takes visual priority; otherwise show WIP orange
     let rowStyle = '';
     if (isSelected) {
-        rowStyle = 'style="background:rgba(124,92,252,0.22); border-color:var(--accent); box-shadow:inset 3px 0 0 var(--accent);"';
+        rowStyle = 'style="background:color-mix(in srgb, var(--accent) 22%, transparent); border-color:var(--accent); box-shadow:inset 3px 0 0 var(--accent);"';
     } else if (t.wip) {
         rowStyle = 'style="background:rgba(251,146,60,0.18); border-color:rgba(251,146,60,0.55);"';
     }
@@ -2745,18 +2951,20 @@ function renderTodoItem(t) {
             <div class="todo-body">
                 <div class="todo-text" ondblclick="startEditTodo('${t.id}', this)" title="Double-click to edit">${escapeHtml(t.text)}</div>
                 <div class="todo-meta">
-                    ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:rgba(124,92,252,0.2);color:var(--accent);">↻ ${t.repeat}</span>` : ''}
-                    ${(t.subtasks && t.subtasks.length) ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">☑ ${t.subtasks.filter(s=>s.done).length}/${t.subtasks.length}</span>` : ''}
+                    ${priorityLabel ? `<span class="todo-priority prio-${t.priority}" title="Priority: ${priorityLabel}"><span class="prio-flag" aria-hidden="true">${ic('flag')}</span>${priorityLabel}</span>` : ''}
+                    ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent-text);">${ic('repeat')} ${t.repeat}</span>` : ''}
+                    ${(t.subtasks && t.subtasks.length) ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">${ic('list-checks')} ${t.subtasks.filter(s=>s.done).length}/${t.subtasks.length}</span>` : ''}
                     ${(t.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
-                    ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${isOverdue ? '⚠️ ' : '📅 '}${formatDate(t.dueDate)}${t.dueTime ? ' ' + formatTime(t.dueTime) : ''}</span>` : ''}
+                    ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${ic(isOverdue ? 'alert' : 'calendar')} ${formatDate(t.dueDate)}${t.dueTime ? ' ' + formatTime(t.dueTime) : ''}</span>` : ''}
                 </div>
                 ${renderSubtasks(t)}
             </div>
             <div class="todo-actions">
-                <button class="todo-action-btn" onclick="addSubtask('${t.id}')" title="Add subtask">☑+</button>
-                <button class="todo-action-btn" onclick="toggleWip('${t.id}')" title="Toggle WIP">🔧</button>
-                <button class="todo-action-btn delete" onclick="deleteTodo('${t.id}')" title="Delete">🗑</button>
+                <button class="todo-action-btn" onclick="addSubtask('${t.id}')" title="Add subtask" aria-label="Add subtask">${ic('list-plus')}</button>
+                <button class="todo-action-btn" onclick="toggleWip('${t.id}')" title="Toggle WIP" aria-label="Toggle WIP">${ic('wrench')}</button>
+                <button class="todo-action-btn delete" onclick="deleteTodo('${t.id}')" title="Delete" aria-label="Delete task">${ic('trash')}</button>
             </div>
+            <button class="todo-more-btn" onclick="openRowMenu(event, '${t.id}')" title="More actions" aria-label="More actions">${ic('ellipsis')}</button>
         </div>
     `;
 }
@@ -2774,7 +2982,7 @@ function renderSubtasks(t) {
              ondragend="onSubtaskDragEnd(event)">
             <div class="subtask-check ${s.done ? 'checked' : ''}" onclick="toggleSubtask('${t.id}', ${i})"></div>
             <span class="subtask-text ${s.done ? 'done' : ''}" ondblclick="editSubtask('${t.id}', ${i}, this)">${escapeHtml(s.text)}</span>
-            <button class="subtask-del" onclick="deleteSubtask('${t.id}', ${i})" title="Remove">✕</button>
+            <button class="subtask-del" onclick="deleteSubtask('${t.id}', ${i})" title="Remove" aria-label="Remove subtask">${ic('x')}</button>
         </div>`).join('') + `</div>`;
 }
 
@@ -2990,6 +3198,8 @@ function demoteTaskToSubtask(srcId, dstId) {
                          (src.priority && src.priority !== 'none'));
 
     if (!dstTask.subtasks) dstTask.subtasks = [];
+    // Remember the target's subtasks so Undo can put them back exactly
+    const prevSubtasks = JSON.parse(JSON.stringify(dstTask.subtasks));
     // Carry the task's own subtasks up as sibling subtasks so none are lost
     dstTask.subtasks.push({ text: src.text || '', done: !!src.completed });
     if (src.subtasks && src.subtasks.length) {
@@ -2998,10 +3208,11 @@ function demoteTaskToSubtask(srcId, dstId) {
     data.todos.splice(srcIdx, 1);
     saveData();
     renderTodos();
-    // Offer undo (restores the full task with all metadata at its old position)
+    // Offer undo: restores the full task (all metadata) at its old position and
+    // removes the subtasks this demote added to the target.
     showToast(
-        losesMeta ? 'Made a subtask — due date/tags/priority dropped' : 'Made a subtask',
-        { type: 'todos', items: [{ item: snapshot, index: srcIdx }] }
+        losesMeta ? 'Made a subtask (due date, tags and priority dropped)' : 'Made a subtask',
+        { type: 'demote', item: snapshot, index: srcIdx, dstId: dstTask.id, prevSubtasks }
     );
     return true;
 }
@@ -3191,11 +3402,11 @@ function toggleSelectAll() {
     if (allSelected) {
         // Deselect all visible
         visible.forEach(t => selectedIds.delete(t.id));
-        document.getElementById('selectAllBtn').textContent = '☑ Select All';
+        document.getElementById('selectAllBtn').textContent = 'Select All';
     } else {
         // Select all visible
         visible.forEach(t => selectedIds.add(t.id));
-        document.getElementById('selectAllBtn').textContent = '☐ Deselect All';
+        document.getElementById('selectAllBtn').textContent = 'Deselect All';
     }
     renderTodos();
 }
@@ -3280,7 +3491,7 @@ function updateSelectedCount() {
             return true;
         });
         const allSelected = visible.length > 0 && visible.every(t => selectedIds.has(t.id));
-        btn.textContent = allSelected ? '☐ Deselect All' : '☑ Select All';
+        btn.textContent = allSelected ? 'Deselect All' : 'Select All';
     }
 }
 
@@ -3303,7 +3514,7 @@ function copySelected() {
     navigator.clipboard.writeText(text).then(() => {
         const btn = document.getElementById('copyBtn');
         const orig = btn.textContent;
-        btn.textContent = `✓ Copied ${selectedIds.size}`;
+        btn.innerHTML = ic('check', 'ic-lead') + 'Copied ' + selectedIds.size;
         setTimeout(() => { btn.textContent = orig; }, 1500);
     }).catch(() => {
         // Fallback for browsers/contexts without clipboard API
@@ -3314,8 +3525,8 @@ function copySelected() {
         document.execCommand('copy');
         document.body.removeChild(ta);
         const btn = document.getElementById('copyBtn');
-        btn.textContent = `✓ Copied ${selectedIds.size}`;
-        setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500);
+        btn.innerHTML = ic('check', 'ic-lead') + 'Copied ' + selectedIds.size;
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
     });
 }
 
@@ -3612,6 +3823,17 @@ function insertPlainText(text) {
 
 // Menu action: read the clipboard and insert it as plain text. Uses the async
 // Clipboard API (a menu click is not a native paste event).
+// Settings > "Keep original formatting when pasting" (default off = clean paste).
+let pasteKeepFormatting = false;
+function togglePasteKeepFormatting() {
+    pasteKeepFormatting = !pasteKeepFormatting;
+    data.settings = data.settings || {};
+    data.settings.pasteKeepFormatting = pasteKeepFormatting;
+    saveData();
+    const t = document.getElementById('pasteKeepFmtToggle');
+    if (t) t.classList.toggle('on', pasteKeepFormatting);
+}
+
 function pasteAsPlainText() {
     focusBody();
     if (navigator.clipboard && navigator.clipboard.readText) {
@@ -3791,70 +4013,224 @@ function fmtLink() {
 
 // Make all links in the editor open in the browser on click,
 // and auto-wrap plain-text URLs as clickable links.
-// Allowlist-based HTML sanitizer for note content. Notes are stored as HTML
-// (bodyHtml) and re-rendered via innerHTML, so any HTML that reaches storage —
-// from rich paste, import, or a synced file — must be cleaned to prevent stored
-// XSS (e.g. <img onerror=...>, <script>, javascript: hrefs). Keeps only a small
-// set of formatting tags/attributes; drops everything else, including every
-// event handler and any non-http(s)/mailto href.
+// ===== SANITIZER START =====
+// Notes are stored as HTML (bodyHtml) and re-rendered with innerHTML, so all
+// HTML that reaches storage (rich paste, restored backups, older data) is
+// cleaned here before it is shown or saved.
+// The allowlist must stay a SUPERSET of what Jot's own editor produces
+// (tables, strikethrough, headings, lists, links, colors, alignment). If it is
+// narrower, saving a note silently destroys the user's formatting.
+// Anything that can run code, embed content or escape the note (scripts,
+// frames, SVG/MathML, event handlers, javascript: URLs, position/z-index
+// styles) is removed.
 const SANITIZE_ALLOWED_TAGS = new Set([
-    'B','I','U','S','STRONG','EM','A','UL','OL','LI','H1','H2','H3',
-    'BLOCKQUOTE','PRE','CODE','BR','DIV','P','SPAN','FONT'
+    'A','ABBR','B','BIG','BLOCKQUOTE','BR','CAPTION','CENTER','CITE','CODE','COL','COLGROUP',
+    'DD','DEL','DIV','DL','DT','EM','FIGCAPTION','FIGURE','FONT',
+    'H1','H2','H3','H4','H5','H6','HR','I','IMG','INS','KBD','LI','MARK','OL','P','PRE','Q',
+    'S','SAMP','SMALL','SPAN','STRIKE','STRONG','SUB','SUP','TABLE','TBODY','TD','TFOOT',
+    'TH','THEAD','TR','TT','U','UL','VAR','WBR'
 ]);
-const SANITIZE_ALLOWED_ATTRS = {
-    'A': new Set(['href']),
-    'SPAN': new Set(['style']),
-    'FONT': new Set(['color']),
-    'DIV': new Set(['style']),
-    'P': new Set(['style'])
+// Removed together with everything inside them.
+const SANITIZE_DROP_TAGS = new Set([
+    'SCRIPT','STYLE','TEMPLATE','NOSCRIPT','IFRAME','FRAME','FRAMESET','OBJECT','EMBED',
+    'APPLET','PARAM','SVG','MATH','META','LINK','BASE','TITLE','INPUT','BUTTON','SELECT',
+    'TEXTAREA','OPTION','AUDIO','VIDEO','SOURCE','TRACK','CANVAS','PORTAL'
+]);
+// Per-tag attributes, in addition to the global style/title/dir/lang.
+const SANITIZE_TAG_ATTRS = {
+    A: new Set(['href','target','rel']),
+    IMG: new Set(['src','alt','width','height']),
+    TABLE: new Set(['class','border','cellpadding','cellspacing','width']),
+    TD: new Set(['colspan','rowspan','width','height']),
+    TH: new Set(['colspan','rowspan','width','height','scope']),
+    COL: new Set(['span','width']),
+    COLGROUP: new Set(['span','width']),
+    OL: new Set(['start','type','reversed']),
+    LI: new Set(['value']),
+    FONT: new Set(['color','size','face'])
 };
+const SANITIZE_CLASSES = new Set(['note-table']);
+const SANITIZE_STYLE_PROPS = new Set([
+    'color','background','background-color','font-weight','font-style','font-size','font-family',
+    'font-variant','text-decoration','text-decoration-line','text-decoration-color',
+    'text-decoration-style','text-align','text-indent','text-transform','text-wrap',
+    'vertical-align','line-height','letter-spacing','white-space','word-break','overflow-wrap',
+    'list-style-type','cursor',
+    'margin','margin-top','margin-right','margin-bottom','margin-left',
+    'margin-inline','margin-inline-start','margin-inline-end',
+    'margin-block','margin-block-start','margin-block-end',
+    'padding','padding-top','padding-right','padding-bottom','padding-left',
+    'padding-inline','padding-inline-start','padding-inline-end',
+    'padding-block','padding-block-start','padding-block-end',
+    'border','border-top','border-right','border-bottom','border-left','border-color',
+    'border-style','border-width','border-collapse','border-spacing','border-radius',
+    'width','min-width','max-width','height','min-height','max-height',
+    'overflow','overflow-x','overflow-y'
+]);
+
+// Keep only allowlisted, non-executable declarations of an inline style.
+function sanitizeStyle(value) {
+    return String(value || '').split(';').map(d => d.trim()).filter(d => {
+        const i = d.indexOf(':');
+        if (i <= 0) return false;
+        const prop = d.slice(0, i).trim().toLowerCase();
+        const val = d.slice(i + 1);
+        if (!SANITIZE_STYLE_PROPS.has(prop)) return false;
+        // No resource loading or script from CSS values
+        return !/url\s*\(|image-set|image\s*\(|cross-fade|element\s*\(|expression\s*\(|javascript:|@import|behavior|-moz-binding|\\/i.test(val);
+    }).join('; ');
+}
+
+// Returns the cleaned attribute value, or null to drop the attribute.
+function sanitizeAttr(tag, name, value) {
+    const v = String(value == null ? '' : value).trim();
+    if (name.startsWith('on')) return null;
+    if (name === 'style') { const s = sanitizeStyle(v); return s || null; }
+    if (name === 'title') return v.slice(0, 500);
+    if (name === 'dir') return /^(ltr|rtl|auto)$/i.test(v) ? v : null;
+    if (name === 'lang') return /^[a-z]{2,3}(-[a-z0-9]{1,8})*$/i.test(v) ? v : null;
+    const allowed = SANITIZE_TAG_ATTRS[tag];
+    if (!allowed || !allowed.has(name)) return null;
+    switch (name) {
+        case 'href': return /^(https?:|mailto:)/i.test(v) ? v : null;
+        case 'src':
+            return (/^https?:/i.test(v) ||
+                    /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[a-z0-9+\/=\s]+$/i.test(v)) ? v : null;
+        case 'target': return v === '_blank' ? v : null;
+        case 'rel': {
+            const t = v.split(/\s+/).filter(x => /^(noopener|noreferrer|nofollow)$/i.test(x));
+            return t.length ? t.join(' ') : null;
+        }
+        case 'class': {
+            const t = v.split(/\s+/).filter(x => SANITIZE_CLASSES.has(x));
+            return t.length ? t.join(' ') : null;
+        }
+        case 'color': return /^(#[0-9a-f]{3,8}|[a-z]{3,20}|rgba?\([\d\s.,%]+\))$/i.test(v) ? v : null;
+        case 'size': return /^[+-]?[1-7]$/.test(v) ? v : null;
+        case 'face': return /^[\w\s,"'.-]{1,100}$/.test(v) ? v : null;
+        case 'type': return /^[1aAiI]$/.test(v) ? v : null;
+        case 'reversed': return '';
+        case 'alt': case 'scope': return v.slice(0, 500);
+        // width, height, colspan, rowspan, span, start, value, border, cellpadding, cellspacing
+        default: return /^\d{1,4}%?$/.test(v) ? v : null;
+    }
+}
+
+// ===== Clean paste (design pass 7) =====
+// Default for rich pastes into a note: keep the structure (headings, lists, bold, italic,
+// underline, strikethrough, links, quotes, code, tables, line breaks) and drop the source
+// app's fonts, sizes, colours, backgrounds and spacing so pasted text follows the theme.
+// Google Docs marks bold/italic with inline styles, so those become real tags first.
+function cleanPastedHtml(html) {
+    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    const body = doc.body;
+    if (!body) return '';
+    const KEEP = new Set(['P', 'BR', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL',
+        'A', 'BLOCKQUOTE', 'PRE', 'CODE', 'HR', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH']);
+    const DROP = new Set(['SCRIPT', 'STYLE', 'META', 'LINK', 'TITLE', 'IMG', 'PICTURE', 'SVG', 'IFRAME', 'OBJECT', 'EMBED',
+        'VIDEO', 'AUDIO', 'CANVAS', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'FORM', 'NOSCRIPT', 'TEMPLATE']);
+    const BLOCKISH = new Set(['DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'MAIN', 'ASIDE', 'NAV', 'FIGURE',
+        'FIGCAPTION', 'DL', 'DT', 'DD', 'CAPTION', 'CENTER', 'ADDRESS']);
+    const BLOCK_CHILD = 'p,div,h1,h2,h3,h4,h5,h6,ul,ol,li,table,blockquote,pre,hr,section,article,header,footer,figure';
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+    const comments = [];
+    while (walker.nextNode()) comments.push(walker.currentNode);
+    comments.forEach(c => c.remove());
+    const styleTags = (el) => {
+        const st = el.style;
+        const tags = [];
+        if (!st) return tags;
+        const fw = String(st.fontWeight || '').toLowerCase();
+        if (fw === 'bold' || fw === 'bolder' || parseInt(fw, 10) >= 600) tags.push('B');
+        if (String(st.fontStyle || '').toLowerCase() === 'italic') tags.push('I');
+        const deco = String(st.textDecorationLine || st.textDecoration || '').toLowerCase();
+        if (deco.includes('underline')) tags.push('U');
+        if (deco.includes('line-through')) tags.push('S');
+        return tags;
+    };
+    const unwrapInto = (el, tags) => {
+        if (!tags.length) { el.replaceWith(...el.childNodes); return; }
+        let outer = null, inner = null;
+        tags.forEach(t => { const w = doc.createElement(t); if (inner) inner.appendChild(w); else outer = w; inner = w; });
+        while (el.firstChild) inner.appendChild(el.firstChild);
+        el.replaceWith(outer);
+    };
+    const retag = (el, tag) => {
+        const n = doc.createElement(tag);
+        while (el.firstChild) n.appendChild(el.firstChild);
+        el.replaceWith(n);
+        return n;
+    };
+    // Children before parents, so a container sees its already-cleaned content.
+    for (const el of Array.from(body.querySelectorAll('*')).reverse()) {
+        const tag = el.tagName.toUpperCase();
+        if (DROP.has(tag)) { el.remove(); continue; }
+        if (tag === 'BR' && /Apple-interchange-newline/.test(String(el.className || ''))) { el.remove(); continue; }
+        let target = el;
+        if (tag === 'B' || tag === 'STRONG') {
+            const fw = String((el.style && el.style.fontWeight) || '').toLowerCase();
+            const n = parseInt(fw, 10);
+            if (fw === 'normal' || fw === 'lighter' || (n > 0 && n < 600)) {   // Google Docs' outer <b style="font-weight:normal">
+                unwrapInto(el, styleTags(el).filter(t => t !== 'B'));
+                continue;
+            }
+        }
+        if (/^H[4-6]$/.test(tag)) {
+            target = retag(el, 'H3');
+        } else if (BLOCKISH.has(tag)) {
+            if (el.querySelector(BLOCK_CHILD)) { el.replaceWith(...el.childNodes); continue; }
+            target = retag(el, 'P');
+        } else if (!KEEP.has(tag)) {
+            unwrapInto(el, styleTags(el));
+            continue;
+        } else if (tag === 'A' && !/^(https?:|mailto:)/i.test((el.getAttribute('href') || '').trim())) {
+            el.replaceWith(...el.childNodes);
+            continue;
+        }
+        for (const attr of Array.from(target.attributes)) {
+            const name = attr.name.toLowerCase();
+            const keep = (target.tagName === 'A' && name === 'href') ||
+                ((target.tagName === 'TD' || target.tagName === 'TH') && (name === 'colspan' || name === 'rowspan'));
+            if (!keep) target.removeAttribute(attr.name);
+        }
+        if (target.tagName === 'TABLE') target.className = 'note-table';
+    }
+    if (!body.textContent.trim() && !body.querySelector('hr, table')) return '';
+    const out = body.innerHTML.trim();
+    return typeof sanitizeHtml === 'function' ? sanitizeHtml(out) : out;
+}
+// end cleanPastedHtml
+
 function sanitizeHtml(dirty) {
     if (dirty == null) return '';
+    // An inert document: nothing parsed into it loads, runs or fires events.
     const doc = document.implementation.createHTMLDocument('');
     const root = doc.body;
     root.innerHTML = String(dirty);
-    const walk = (node) => {
-        // Iterate over a static copy since we mutate children during traversal
+    const clean = (node) => {
+        // Iterate a static copy: children are moved/removed during traversal
         Array.from(node.childNodes).forEach(child => {
-            if (child.nodeType === 1) {               // element
-                const tag = child.tagName;
-                if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
-                    // Unwrap disallowed element: keep its (sanitized) children,
-                    // drop the element itself. <script>/<style> get removed whole.
-                    if (tag === 'SCRIPT' || tag === 'STYLE') { child.remove(); return; }
-                    walk(child);
-                    while (child.firstChild) node.insertBefore(child.firstChild, child);
-                    child.remove();
-                    return;
-                }
-                // Strip every attribute not explicitly allowed for this tag
-                const allowed = SANITIZE_ALLOWED_ATTRS[tag] || new Set();
-                Array.from(child.attributes).forEach(attr => {
-                    const name = attr.name.toLowerCase();
-                    if (name.startsWith('on') || !allowed.has(name)) {
-                        child.removeAttribute(attr.name);
-                        return;
-                    }
-                    if (name === 'href') {
-                        const v = (attr.value || '').trim();
-                        // Only http(s) and mailto survive; everything else (javascript:,
-                        // data:, vbscript:, relative) is dropped.
-                        if (!/^(https?:|mailto:)/i.test(v)) child.removeAttribute(attr.name);
-                    }
-                    if (name === 'style') {
-                        // Disallow url()/expression() in inline styles
-                        if (/url\s*\(|expression\s*\(|javascript:/i.test(attr.value || '')) {
-                            child.removeAttribute(attr.name);
-                        }
-                    }
-                });
-                walk(child);
-            } else if (child.nodeType === 8) {        // comment
+            if (child.nodeType === 8) { child.remove(); return; }   // comment
+            if (child.nodeType !== 1) return;                       // text stays
+            const tag = child.tagName.toUpperCase();                // SVG/MathML names are lower-case
+            if (SANITIZE_DROP_TAGS.has(tag)) { child.remove(); return; }
+            if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
+                // Unknown wrapper (section, article, label, form...): keep its
+                // cleaned content, drop the element itself.
+                clean(child);
+                while (child.firstChild) node.insertBefore(child.firstChild, child);
                 child.remove();
+                return;
             }
+            Array.from(child.attributes).forEach(attr => {
+                const cleaned = sanitizeAttr(tag, attr.name.toLowerCase(), attr.value);
+                if (cleaned === null) child.removeAttribute(attr.name);
+                else if (cleaned !== attr.value) child.setAttribute(attr.name, cleaned);
+            });
+            clean(child);
         });
     };
-    walk(root);
+    clean(root);
     return root.innerHTML;
 }
 
@@ -3872,6 +4248,7 @@ function makeSafeLink(rawUrl) {
     a.textContent = url;
     return a;
 }
+// ===== SANITIZER END =====
 
 function linkifyEditor() {
     const el = document.getElementById('noteBody');
@@ -3991,7 +4368,7 @@ function renderNoteFolderBar() {
         html += `<button class="note-folder-pill ${currentNoteFolder === '__none__' ? 'active' : ''}" onclick="setNoteFolder('__none__')">Unfiled</button>`;
     }
     folders.forEach((f, i) => {
-        html += `<button class="note-folder-pill ${currentNoteFolder === f ? 'active' : ''}" onclick="setNoteFolderByIndex(${i})">📁 ${escapeHtml(f)}</button>`;
+        html += `<button class="note-folder-pill ${currentNoteFolder === f ? 'active' : ''}" onclick="setNoteFolderByIndex(${i})">${ic('folder')} ${escapeHtml(f)}</button>`;
     });
     html += `<button class="note-folder-pill" onclick="createNoteFolder()" title="New folder">＋</button>`;
     bar.innerHTML = html;
@@ -4076,7 +4453,7 @@ function renderNotes() {
 
     const container = document.getElementById('noteList');
     if (notes.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">📒</div><p>No notes yet — click + New to start</p></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="icon">${ic('pen')}</div><p>No notes yet — click + New to start</p></div>`;
     } else {
         container.innerHTML = notes.map(n => `
             <div class="note-item" onclick="openNoteEditor('${n.id}')"
@@ -4086,11 +4463,11 @@ function renderNotes() {
                  ondragleave="onNoteDragLeave(event)"
                  ondrop="onNoteDrop(event, '${n.id}')"
                  ondragend="onNoteDragEnd(event)">
-                <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note">✕</button>
+                <button class="note-delete-btn" onclick="event.stopPropagation(); deleteNote('${n.id}')" title="Delete note" aria-label="Delete note">${ic('x')}</button>
                 <div class="note-title">${escapeHtml(n.title) || 'Untitled'}</div>
                 <div class="note-preview">${escapeHtml((n.body || '').substring(0, 80)) || 'Empty note…'}</div>
                 ${(n.folder || (n.tags && n.tags.length)) ? `<div class="note-card-tags">
-                    ${n.folder ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">📁 ${escapeHtml(n.folder)}</span>` : ''}
+                    ${n.folder ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">${ic('folder')} ${escapeHtml(n.folder)}</span>` : ''}
                     ${(n.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${escapeHtml(tag)}</span>`).join('')}
                 </div>` : ''}
                 <div class="note-footer">
@@ -4109,7 +4486,7 @@ function renderNotes() {
         if (taskMatches > 0) {
             const hint = document.createElement('div');
             hint.style.cssText = 'padding:8px 12px; margin:4px 0; font-size:12px; color:var(--accent); cursor:pointer; text-align:center;';
-            hint.innerHTML = `🔍 ${taskMatches} matching task${taskMatches > 1 ? 's' : ''} → View in Tasks`;
+            hint.innerHTML = `${ic('search')} ${taskMatches} matching task${taskMatches > 1 ? 's' : ''} → View in Tasks`;
             hint.onclick = () => { const q = document.getElementById('searchNotes').value; switchTab('todos'); document.getElementById('searchTodos').value = q; renderTodos(); };
             container.appendChild(hint);
         }
@@ -4154,6 +4531,15 @@ function onNoteDragEnd(e) {
 }
 
 // ===== CONTEXT MENU =====
+// Always-visible ⋯ on each task row: opens the same menu as right-click, anchored
+// under the button (keyboard-triggered clicks carry no pointer position).
+function openRowMenu(e, id) {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    const r = btn.getBoundingClientRect();
+    showContextMenu({ target: btn, clientX: r.right - 4, clientY: r.bottom + 2, preventDefault() {} }, id);
+}
+
 function showContextMenu(e, id) {
     // If right-clicking inside an editable field (e.g. inline task edit textarea),
     // let the native spellcheck/edit context menu handle it instead.
@@ -4183,7 +4569,7 @@ function showContextMenu(e, id) {
     document.getElementById('ctxPrioLow').classList.toggle('active', prio === 'low');
     // Archive/Unarchive label
     const archEl = document.getElementById('ctxArchive');
-    if (archEl) archEl.textContent = (todo && todo.archived) ? '🗄️ Unarchive' : '🗄️ Archive';
+    if (archEl) archEl.innerHTML = ic('archive', 'ic-lead') + ((todo && todo.archived) ? 'Unarchive' : 'Archive');
     sub.innerHTML = `<div class="context-menu-item ${!currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('')">No Group</div>` +
         data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('${g.replace(/'/g, "\\'")}')">${escapeHtml(g)}</div>`).join('');
 
@@ -4213,11 +4599,14 @@ function showContextMenu(e, id) {
         menu.style.left = x + 'px';
         menu.style.top = y + 'px';
     });
+    jotMenuOpened();   // keyboard support: roles, focus the first item
 }
 
 function hideContextMenu() {
+    const jotFocusWasInMenu = jotMenuHasFocus();
     document.getElementById('contextMenu').style.display = 'none';
     contextTargetId = null;
+    jotMenuClosed(jotFocusWasInMenu);
 }
 
 function ctxSetPriority(p) {
@@ -4631,6 +5020,57 @@ const THEMES = {
     light:  { name: 'Light',   accent: '#7c5cfc', accentHover: '#6b4ce0', bg: '#f4f4f8', surface: '#ffffff', surfaceHover: '#ececf2', border: '#d8d8e2', widget: '#7c5cfc', text: '#1e1e2e', textDim: '#6b6b80' },
 };
 
+// ===== Theme contrast helpers (design pass 1) =====
+// Derive label colours from the live accent so every theme, including a
+// custom accent, keeps readable text on the accent and in accent-coloured text.
+function jotHexToRgb(hex) {
+    let h = String(hex || '').trim().replace('#', '');
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+    return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+}
+function jotLuminance(rgb) {
+    const [r, g, b] = rgb.map(v => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function jotContrast(a, b) {
+    const la = jotLuminance(a), lb = jotLuminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function jotRgbToHex(rgb) {
+    return '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+}
+// Text drawn ON the accent (button labels, checkmarks): white or near-black, whichever reads better.
+function jotOnAccent(accent) {
+    const a = jotHexToRgb(accent);
+    if (!a) return '#ffffff';
+    return jotContrast([255, 255, 255], a) >= jotContrast([17, 19, 24], a) ? '#ffffff' : '#111318';
+}
+// Accent shade for TEXT on the given backgrounds: nudged toward white (dark themes)
+// or black (light themes) until it reaches minRatio against every background.
+function jotTextSafeAccent(accent, backgrounds, minRatio = 4.5) {
+    const a = jotHexToRgb(accent);
+    const bgs = backgrounds.map(jotHexToRgb).filter(Boolean);
+    if (!a || !bgs.length) return accent;
+    const target = bgs.every(b => jotLuminance(b) < 0.4) ? [255, 255, 255] : [0, 0, 0];
+    for (let step = 0; step <= 20; step++) {
+        const t = step / 20;
+        const mixed = a.map((v, i) => v + (target[i] - v) * t);
+        if (bgs.every(b => jotContrast(mixed, b) >= minRatio)) return jotRgbToHex(mixed);
+    }
+    return jotRgbToHex(target);
+}
+function applyAccentDerived(accent, backgrounds) {
+    const root = document.documentElement.style;
+    const cs = getComputedStyle(document.documentElement);
+    const bgs = backgrounds || [cs.getPropertyValue('--bg').trim(), cs.getPropertyValue('--surface').trim()];
+    root.setProperty('--on-accent', jotOnAccent(accent));
+    root.setProperty('--accent-text', jotTextSafeAccent(accent, bgs));
+}
+
 function applyTheme(themeKey) {
     const t = THEMES[themeKey] || THEMES.purple;
     const root = document.documentElement.style;
@@ -4642,7 +5082,8 @@ function applyTheme(themeKey) {
     root.setProperty('--surface-hover', t.surfaceHover);
     root.setProperty('--border', t.border);
     root.setProperty('--text', t.text || '#e2e2f0');
-    root.setProperty('--text-dim', t.textDim || '#8888a8');
+    root.setProperty('--text-dim', t.textDim || '#9e9ebb');
+    applyAccentDerived(t.accent, [t.bg, t.surface]);
     // Widget color
     root.setProperty('--widget-color', t.widget);
     const widget = document.getElementById('widget');
@@ -4685,6 +5126,15 @@ function renderSettings() {
 
     // Reminders toggle
     document.getElementById('remindersToggle').classList.toggle('on', !!(data.settings && data.settings.reminders));
+    pasteKeepFormatting = !!(data.settings && data.settings.pasteKeepFormatting);
+    document.getElementById('pasteKeepFmtToggle').classList.toggle('on', pasteKeepFormatting);
+
+    // Click-away collapse (default on); the main process applies it on blur
+    const collapseOn = !(data.settings && data.settings.collapseOnBlur === false);
+    document.getElementById('collapseBlurToggle').classList.toggle('on', collapseOn);
+    if (window.widgetAPI && window.widgetAPI.setCollapseOnBlur) {
+        window.widgetAPI.setCollapseOnBlur(collapseOn);
+    }
 
     // Custom accent color input
     const customInput = document.getElementById('customAccent');
@@ -4721,6 +5171,7 @@ function setCustomAccent(color) {
 function applyCustomAccent(color) {
     const root = document.documentElement.style;
     root.setProperty('--accent', color);
+    applyAccentDerived(color);
     root.setProperty('--accent-hover', color);
     root.setProperty('--widget-color', color);
     const widget = document.getElementById('widget');
@@ -4752,6 +5203,18 @@ function toggleRemindersSetting() {
     saveData();
     if (window.widgetAPI && window.widgetAPI.setReminders) {
         window.widgetAPI.setReminders(willEnable);
+    }
+}
+
+function toggleCollapseOnBlur() {
+    const toggle = document.getElementById('collapseBlurToggle');
+    const willEnable = !toggle.classList.contains('on');
+    toggle.classList.toggle('on', willEnable);
+    data.settings = data.settings || {};
+    data.settings.collapseOnBlur = willEnable;
+    saveData();
+    if (window.widgetAPI && window.widgetAPI.setCollapseOnBlur) {
+        window.widgetAPI.setCollapseOnBlur(willEnable);
     }
 }
 
@@ -4808,6 +5271,10 @@ function stopDragScroll() {
 document.addEventListener('dragend', stopDragScroll);
 
 applyTheme((data.settings && data.settings.theme) || 'purple');
+    // Tell the main process the saved click-away choice at startup (default on)
+    if (window.widgetAPI && window.widgetAPI.setCollapseOnBlur) {
+        window.widgetAPI.setCollapseOnBlur(!(data.settings && data.settings.collapseOnBlur === false));
+    }
 if (data.settings && data.settings.theme === 'custom' && data.settings.customAccent) {
     applyCustomAccent(data.settings.customAccent);
 }
@@ -4821,9 +5288,12 @@ if (data.settings && data.settings.sort) {
 }
 // Restore saved filter (falls back to 'all')
 if (data.settings && data.settings.filter) {
-    currentFilter = data.settings.filter;
+    currentFilter = data.settings.filter; syncFilterSelect();
 }
 // Restore "paste as plain text" preference
+// Restore "keep original formatting when pasting" (default off = clean paste)
+pasteKeepFormatting = !!(data.settings && data.settings.pasteKeepFormatting);
+{ const kf = document.getElementById('pasteKeepFmtToggle'); if (kf) kf.classList.toggle('on', pasteKeepFormatting); }
 if (data.settings && typeof data.settings.pastePlainText === 'boolean') {
     pastePlainTextDefault = data.settings.pastePlainText;
     const ppt = document.getElementById('pastePlainToggle');
@@ -4872,18 +5342,37 @@ window.addEventListener('beforeunload', () => {
             }
             return;
         }
-        // Plain-text paste: force when Shift is held (Ctrl+Shift+V) OR when the
-        // "paste plain text" preference is on. Strips all source formatting.
-        const forcePlain = e.shiftKey || pastePlainTextDefault;
-        const hasHtml = cd.types && Array.prototype.indexOf.call(cd.types, 'text/html') !== -1;
-        if (text && (forcePlain || hasHtml)) {
-            if (forcePlain) {
+        // Plain-text paste when the shortcut was Ctrl/Cmd+Shift+V or the
+        // "paste plain text" preference is on. A paste event has no shiftKey,
+        // so the keydown listener below records the shortcut.
+        const forcePlain = plainPasteShortcut || pastePlainTextDefault;
+        plainPasteShortcut = false;
+        if (text && forcePlain) {
+            e.preventDefault();
+            insertPlainText(text);
+            saveCurrentNote();
+        }
+        // Clean paste (default): keep the structure, drop the source's fonts/sizes/colours.
+        // Settings > "Keep original formatting when pasting" restores the browser's rich paste.
+        if (!e.defaultPrevented && !pasteKeepFormatting && el.isContentEditable && cd) {
+            const html = cd.getData('text/html');
+            const clean = html ? cleanPastedHtml(html) : '';
+            if (clean) {
                 e.preventDefault();
-                insertPlainText(text);
+                document.execCommand('insertHTML', false, clean);   // keeps native undo
+                linkifyEditor();
                 saveCurrentNote();
+                return;
             }
-            // If not forcing plain but HTML is present, let the browser's default
-            // rich paste proceed (user kept formatting on).
+        }
+        // Otherwise the browser's normal rich paste runs (formatting kept).
+    });
+    // Ctrl+Shift+V (Windows) / Cmd+Shift+V (Mac): flag the paste that follows
+    // as plain text.
+    el.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+            plainPasteShortcut = true;
+            setTimeout(() => { plainPasteShortcut = false; }, 500);
         }
     });
     // Turn typed URLs into links when you press space/enter after them
@@ -5119,6 +5608,110 @@ function toggleAutoLaunch() {
         alBtn.title = next ? 'Launch at startup: ON' : 'Launch at startup: OFF';
     });
 }
+
+// ===== Design pass 2: platform polish and accessible switches =====
+(function jotPlatformPolish() {
+    const isMac = /Mac/i.test(navigator.platform || navigator.userAgent || '');
+    if (isMac) {
+        document.body.classList.add('platform-mac');
+        // Shortcut hints: the handlers accept Cmd on Mac, so show the Mac key.
+        document.querySelectorAll('[title*="Ctrl+"]').forEach(el => { el.title = el.title.replace(/Ctrl\+/g, '⌘'); });
+    }
+    // The settings toggles are styled divs; give them switch semantics and keyboard support.
+    document.querySelectorAll('.toggle-switch').forEach(el => {
+        el.setAttribute('role', 'switch');
+        el.tabIndex = 0;
+        const label = el.closest('.settings-row')?.querySelector('.label');
+        if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label.textContent.trim());
+        const sync = () => el.setAttribute('aria-checked', el.classList.contains('on') ? 'true' : 'false');
+        sync();
+        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+        el.addEventListener('keydown', e => {
+            if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); }
+        });
+    });
+})();
+// ===== Keyboard support for the task menu (right-click / ⋯ button) =====
+// Arrow keys move, Enter/Space choose, Right opens a submenu, Left closes it,
+// Home/End jump, Escape or Tab closes and returns focus to whatever opened the menu.
+var jotMenuOpener = null;
+function jotMenuEl() { return document.getElementById('contextMenu'); }
+function jotMenuItems() {
+    const menu = jotMenuEl();
+    return menu ? Array.from(menu.querySelectorAll('.context-menu-item')).filter(el => el.getClientRects().length > 0) : [];
+}
+function jotMenuHasFocus() {
+    const menu = jotMenuEl();
+    return !!(menu && menu.contains(document.activeElement));
+}
+function jotMenuOpened() {
+    const menu = jotMenuEl();
+    if (!menu) return;
+    if (!menu.contains(document.activeElement)) jotMenuOpener = document.activeElement;
+    menu.setAttribute('role', 'menu');
+    menu.querySelectorAll('.context-menu-item').forEach(el => { el.setAttribute('role', 'menuitem'); el.tabIndex = -1; });
+    const first = jotMenuItems()[0];
+    if (first) first.focus({ preventScroll: true });
+}
+function jotMenuClosed(focusWasInMenu) {
+    if (focusWasInMenu && jotMenuOpener && jotMenuOpener.isConnected) jotMenuOpener.focus({ preventScroll: true });
+    jotMenuOpener = null;
+}
+(function setupMenuKeys() {
+    const menu = jotMenuEl();
+    if (!menu) return;
+    menu.addEventListener('keydown', e => {
+        const items = jotMenuItems();
+        const cur = document.activeElement;
+        const i = items.indexOf(cur);
+        const focusAt = n => { const t = items[n]; if (t) t.focus({ preventScroll: true }); };
+        switch (e.key) {
+            case 'ArrowDown': focusAt(i < 0 || i === items.length - 1 ? 0 : i + 1); break;
+            case 'ArrowUp': focusAt(i <= 0 ? items.length - 1 : i - 1); break;
+            case 'Home': focusAt(0); break;
+            case 'End': focusAt(items.length - 1); break;
+            case 'Enter':
+            case ' ':
+                if (i >= 0) items[i].click();
+                break;
+            case 'ArrowRight':
+                if (i >= 0 && items[i].querySelector('.ic-trail')) {
+                    const toggle = items[i];
+                    const sub = toggle.nextElementSibling;
+                    if (!(sub && sub.classList.contains('context-sub-menu') && sub.classList.contains('open'))) toggle.click();
+                    const now = jotMenuItems();
+                    const next = now[now.indexOf(toggle) + 1];
+                    if (next && next.closest('.context-sub-menu')) next.focus({ preventScroll: true });
+                }
+                break;
+            case 'ArrowLeft': {
+                const sub = cur && cur.closest('.context-sub-menu');
+                if (sub) {
+                    sub.classList.remove('open');
+                    let t = sub.previousElementSibling;
+                    while (t && !t.classList.contains('context-menu-item')) t = t.previousElementSibling;
+                    if (t) t.focus({ preventScroll: true });
+                }
+                break;
+            }
+            case 'Escape':
+            case 'Tab':
+                hideContextMenu();
+                break;
+            default:
+                return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    // Escape also closes the menu when it was opened with the mouse and focus is elsewhere.
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && menu.style.display === 'block' && !menu.contains(document.activeElement)) {
+            hideContextMenu();
+            e.stopPropagation();
+        }
+    }, true);
+})();
 </script>
 </body>
 </html>

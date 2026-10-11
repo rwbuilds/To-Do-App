@@ -74,6 +74,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
+          # Tag the commit this job built. Without this, a missing tag is created
+          # at the branch HEAD when the release is published, which is wrong if
+          # another push landed during the build (v1.6.1 was tagged on v1.6.2's commit).
+          target_commitish: ${{ github.sha }}
           name: Jot v${{ steps.ver.outputs.version }}
           files: release/*
           fail_on_unmatched_files: true

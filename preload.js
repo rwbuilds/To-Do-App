@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   onQuickAdd: (cb) => ipcRenderer.on('quick-add', cb),
   setEditing: (editing) => ipcRenderer.send('set-editing', editing),
   suppressCollapse: () => ipcRenderer.send('suppress-collapse'),
+  setCollapseOnBlur: (value) => ipcRenderer.send('set-collapse-on-blur', value),
   syncReminders: (tasks) => ipcRenderer.send('sync-reminders', tasks),
   setReminders: (enabled) => ipcRenderer.send('set-reminders', enabled),
   onFocusTask: (cb) => ipcRenderer.on('focus-task', (e, id) => cb(id)),
