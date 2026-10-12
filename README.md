@@ -14,7 +14,7 @@ A draggable, always-on-top todo & notes widget built with Electron.
 - 💾 Data persists locally (localStorage)
 
 ## Requirements
-- [Node.js](https://nodejs.org/) 18+ installed on a **Windows machine**
+- [Node.js](https://nodejs.org/) 22.12 or later installed on a **Windows machine** (Electron 44 needs it)
 
 ## Run it (development)
 ```bash

@@ -1381,6 +1381,19 @@
     /* ===== Design pass 9: keyboard-focused task-menu item ===== */
     .context-menu-item:focus { outline: none; }
     .context-menu-item:focus-visible { outline: none; background: var(--surface-hover); box-shadow: inset 2px 0 0 var(--accent); }
+    /* ===== Widget opacity setting (default 50%, the original look); hover adds 30 points ===== */
+    #widget { opacity: var(--widget-opacity, 0.5); }
+    #widget:hover { opacity: min(1, var(--widget-opacity, 0.5) + 0.3); }
+    #widgetOpacityRange { width: 100px; accent-color: var(--accent); cursor: pointer; }
+    .widget-opacity-control { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .widget-opacity-preview { width: 44px; height: 28px; border-radius: 7px; border: 1px solid var(--border); background: linear-gradient(90deg, #ffffff 50%, #1e1e2e 50%); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .widget-opacity-preview > span { width: 22px; height: 22px; border-radius: 6px; background: var(--widget-color, var(--accent)); opacity: var(--widget-opacity, 0.5); }
+    /* ===== Widget fit: the widget fills its 56 x 56 window, so the hover scale-up and the outer
+       shadow were cut off at the window edge. Hover feedback there is the opacity change. ===== */
+    body.electron #widget { box-shadow: none; }
+    body.electron #widget:hover { transform: none; }
+    body.electron #widget:active { transform: scale(0.95); }
+    #widget:focus-visible { outline: 2px solid var(--on-accent); outline-offset: -4px; }
     </style>
 </head>
 <body>
@@ -1425,7 +1438,7 @@
 </defs></svg>
 
 <!-- Widget (collapsed) -->
-<div id="widget" onclick="expandApp()" title="Jot">
+<div id="widget" onclick="expandApp()" title="Jot" role="button" tabindex="0" aria-label="Open Jot">
     <span class="widget-icon"><svg class="ic" aria-hidden="true"><use href="#i-pen"/></svg></span>
     <span class="badge hidden" id="badge">0</span>
 </div>
@@ -1636,6 +1649,16 @@
                 </div>
                 <input type="color" id="customAccent" value="#7c5cfc" onchange="setCustomAccent(this.value)" style="width:40px; height:30px; border:none; background:none; cursor:pointer;">
             </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
+                    <div class="label">Widget opacity <span id="widgetOpacityValue">50%</span></div>
+                    <div class="sublabel">Applies when Jot is collapsed. The preview shows the widget over a light and a dark background.</div>
+                </div>
+                <div class="widget-opacity-control">
+                    <span class="widget-opacity-preview" title="How the widget looks over a light and a dark background" aria-hidden="true"><span></span></span>
+                    <input type="range" id="widgetOpacityRange" min="30" max="100" step="5" value="50" aria-label="Widget opacity" oninput="applyWidgetOpacity(this.value)" onchange="setWidgetOpacity(this.value)">
+                </div>
+            </div>
         </div>
         <div class="settings-section">
             <h3>General</h3>
@@ -1778,7 +1801,7 @@
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.6.3';   // keep in sync with package.json
+const APP_VERSION = '1.6.4';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
@@ -1911,7 +1934,7 @@ function exportData() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = localDateStr();   // local day, not the UTC one
     a.download = `jot-backup-${stamp}.json`;
     document.body.appendChild(a);
     a.click();
@@ -2038,15 +2061,18 @@ function restoreApp() {
 
 // ===== BADGE =====
 function updateBadge() {
+    jotBadgeDay = localDateStr();   // the day this was worked out for; refreshDateUI redoes it after midnight
     // Count open (not completed, not archived) tasks
     const openTasks = data.todos.filter(t => !t.completed && !t.archived);
     const active = openTasks.length;
     const badge = document.getElementById('badge');
+    const widgetEl = document.getElementById('widget');
+    if (widgetEl) widgetEl.setAttribute('aria-label', active > 0 ? `Open Jot, ${active} open task${active === 1 ? '' : 's'}` : 'Open Jot');
     if (active > 0) {
         badge.textContent = active > 99 ? '99+' : active;
         badge.classList.remove('hidden');
         // Emphasize when something is due today or overdue
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = jotBadgeDay;   // the local day (toISOString() gave the UTC day)
         const hasDue = openTasks.some(t => t.dueDate && t.dueDate <= todayStr);
         badge.classList.toggle('badge-due', hasDue);
     } else {
@@ -2161,7 +2187,7 @@ function parseNaturalSchedule(text) {
     let dueDate = null, dueTime = null;
     let s = ' ' + text + ' ';
 
-    const fmt = (d) => d.toISOString().slice(0, 10);
+    const fmt = (d) => localDateStr(d);   // local day; toISOString() gave the UTC day (a day early east of UTC)
     const now = new Date();
     const atMidnight = (d) => { d.setHours(0,0,0,0); return d; };
 
@@ -2219,7 +2245,7 @@ function parseNaturalSchedule(text) {
         const d = atMidnight(new Date());
         if (unit.startsWith('day')) d.setDate(d.getDate() + n);
         else if (unit.startsWith('week')) d.setDate(d.getDate() + n * 7);
-        else if (unit.startsWith('month')) d.setMonth(d.getMonth() + n);
+        else if (unit.startsWith('month')) addMonthsClamped(d, n);
         dueDate = fmt(d);
         s = s.replace(dm[0], ' ');
     } else if (/\bnext week\b/i.test(s)) {
@@ -2227,7 +2253,7 @@ function parseNaturalSchedule(text) {
         dueDate = fmt(d);
         s = s.replace(/\bnext week\b/i, ' ');
     } else if (/\bnext month\b/i.test(s)) {
-        const d = atMidnight(new Date()); d.setMonth(d.getMonth() + 1);
+        const d = addMonthsClamped(atMidnight(new Date()), 1);
         dueDate = fmt(d);
         s = s.replace(/\bnext month\b/i, ' ');
     } else if ((dm = s.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i))) {
@@ -2291,8 +2317,8 @@ function updateParsePreview() {
     const parsed = parseNaturalSchedule(noTags);
 
     const chips = [];
-    const effDate = pickedDate || parsed.dueDate;
     const effTime = pickedTime || parsed.dueTime;
+    const effDate = pickedDate || parsed.dueDate || (effTime ? localDateStr() : null);   // a time alone means today, as in addTodo
     if (effDate) {
         let label = formatDate(effDate);
         if (effTime) label += ' · ' + formatTime(effTime);
@@ -2332,8 +2358,9 @@ function addTodo() {
 
     const priority = document.getElementById('prioritySelect').value;
     // Explicit date/time pickers take precedence over parsed values.
-    const dueDate = (document.getElementById('dueInput').value || null) || parsed.dueDate;
     const dueTime = (document.getElementById('dueTimeInput').value || null) || parsed.dueTime;
+    // A time with no date means today, the rule the text parser already applies. Without this the time was dropped.
+    const dueDate = (document.getElementById('dueInput').value || null) || parsed.dueDate || (dueTime ? localDateStr() : null);
     const repeat = document.getElementById('repeatSelect').value || 'none';
 
     // Group: use the explicit choice from the options dropdown if set;
@@ -2565,12 +2592,16 @@ function toggleTodo(id) {
 
 function spawnNextOccurrence(todo) {
     // Compute next due date from the current one (or today)
-    let base = todo.dueDate ? new Date(todo.dueDate) : new Date();
+    // Local calendar math. Reading the due day as UTC and printing the UTC day made a repeat with no
+    // due date skip a day after 5 PM Pacific, and daily and weekly repeats land a day early across
+    // the spring clock change.
+    let base = todo.dueDate ? parseLocalDate(todo.dueDate) : startOfToday();
+    if (isNaN(base)) base = startOfToday();
     if (todo.repeat === 'daily') base.setDate(base.getDate() + 1);
     else if (todo.repeat === 'weekly') base.setDate(base.getDate() + 7);
-    else if (todo.repeat === 'monthly') base.setMonth(base.getMonth() + 1);
+    else if (todo.repeat === 'monthly') addMonthsClamped(base, 1);   // Jan 31 -> Feb 28, not Mar 3
 
-    const nextDue = base.toISOString().slice(0, 10);
+    const nextDue = localDateStr(base);
     // Avoid duplicating if an identical open recurrence already exists
     const dup = data.todos.some(t => t.text === todo.text && t.repeat === todo.repeat && !t.completed && t.dueDate === nextDue);
     if (dup) return;
@@ -2668,6 +2699,7 @@ function startEditTodo(id, textEl) {
 }
 
 function renderTodos() {
+    jotListStamp = dateUIStamp();   // what refreshDateUI compares against
     const search = document.getElementById('searchTodos').value.toLowerCase();
     const groupFilter = document.getElementById('groupFilter').value;
 
@@ -2784,7 +2816,7 @@ function renderTodos() {
     const total = activeTodos.length;
     const done = activeTodos.filter(t => t.completed).length;
     const wip = activeTodos.filter(t => t.wip).length;
-    const overdue = activeTodos.filter(t => t.dueDate && !t.completed && new Date(t.dueDate) < new Date()).length;
+    const overdue = activeTodos.filter(t => isTaskOverdue(t)).length;
     document.getElementById('todoStats').innerHTML = `
         <span>${done}/${total} done · ${wip} WIP</span>
         <span>${overdue > 0 ? `${ic('alert')} ${overdue} overdue` : `${ic('check')} All on track`}</span>
@@ -2924,7 +2956,7 @@ function ic(name, cls) {
 function renderTodoItem(t) {
     const priorityClass = t.priority !== 'none' && t.priority ? `priority-${t.priority}` : '';
     const priorityLabel = ({ high: 'High', medium: 'Medium', low: 'Low' })[t.priority] || '';
-    const isOverdue = t.dueDate && !t.completed && new Date(t.dueDate) < new Date();
+    const isOverdue = isTaskOverdue(t);
     const isSelected = selectedIds.has(t.id);
     // Selected state takes visual priority; otherwise show WIP orange
     let rowStyle = '';
@@ -4778,6 +4810,10 @@ function makeDraggable(el, handleEl) {
 
 // Only use JS-based dragging in browser mode.
 // In Electron, the OS handles window dragging via -webkit-app-region: drag.
+// Keyboard: the widget is focusable (tabindex), and Enter or Space opens Jot in both modes.
+document.getElementById('widget').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expandApp(); }
+});
 if (!window.widgetAPI) {
     makeDraggable(document.getElementById('widget'));
     makeDraggable(document.getElementById('app'), document.getElementById('titlebar'));
@@ -4943,8 +4979,66 @@ function formatTime(t) {
     return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
 }
 
+// ===== Local calendar dates =====
+// dueDate is a calendar day ("YYYY-MM-DD", from the date pickers or the text parser) in the
+// user's own time zone. new Date("YYYY-MM-DD") reads that as midnight UTC and toISOString()
+// prints the UTC day, which moved dates by a day: west of UTC every date showed as the day
+// before and tasks turned overdue before their due day began; east of UTC "tomorrow" was
+// saved as today.
+function localDateStr(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function parseLocalDate(str) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || ''));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);   // any other format: parsed as before
+}
+function startOfToday() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+// Step by calendar months, keeping the day but stopping at the month's last day
+// (Jan 31 + 1 month = Feb 28). setMonth alone overflows: Jan 31 + 1 month = Mar 3.
+function addMonthsClamped(d, n) {
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + n);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+    return d;
+}
+// Overdue once the due moment has passed: the due time on the due day, or the end of the due
+// day for a task without a time (the same end-of-day rule the due-date sort uses).
+function isTaskOverdue(t) {
+    if (!t || !t.dueDate || t.completed) return false;
+    const due = parseLocalDate(t.dueDate);
+    if (isNaN(due)) return false;
+    const m = /^(\d{1,2}):(\d{2})/.exec(t.dueTime || '');
+    if (m) due.setHours(+m[1], +m[2], 0, 0);
+    else due.setHours(23, 59, 59, 999);
+    return new Date() > due;
+}
+// Dates move on while Jot keeps running: at midnight (the Today and Tomorrow labels, the badge's
+// due-today pulse) and when a due time passes (overdue marks). Checked once a minute.
+var jotBadgeDay, jotListStamp;   // var so updateBadge and renderTodos can set them before this line runs
+function dateUIStamp() {
+    return localDateStr() + '|' + data.todos.filter(t => isTaskOverdue(t)).map(t => t.id).join(',');
+}
+function refreshDateUI() {
+    if (localDateStr() !== jotBadgeDay) updateBadge();
+    if (appState !== 'expanded' || dateUIStamp() === jotListStamp) return;
+    // Don't redraw the list under the user. While they drag, edit, point at it or have its menu
+    // open, leave it for the next check.
+    if (dragSrcId || dragSectionSrc || subDrag) return;
+    const list = document.getElementById('todoList');
+    if (list && (list.contains(document.activeElement) || list.matches(':hover'))) return;
+    const menu = document.getElementById('contextMenu');
+    if (menu && menu.style.display === 'block') return;
+    renderTodos();
+}
+
 function formatDate(dateStr) {
-    const d = new Date(dateStr);
+    const d = parseLocalDate(dateStr);
     const today = new Date();
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
     
@@ -5071,6 +5165,23 @@ function applyAccentDerived(accent, backgrounds) {
     root.setProperty('--accent-text', jotTextSafeAccent(accent, bgs));
 }
 
+// Settings > Theme > "Widget opacity": how solid the collapsed widget looks (default 50%, the original look).
+function applyWidgetOpacity(pct) {
+    const v = Math.min(100, Math.max(30, parseInt(pct, 10) || 50));
+    document.documentElement.style.setProperty('--widget-opacity', String(v / 100));
+    const label = document.getElementById('widgetOpacityValue');
+    if (label) label.textContent = v + '%';
+    const range = document.getElementById('widgetOpacityRange');
+    if (range && range.value !== String(v)) range.value = String(v);
+    return v;
+}
+function setWidgetOpacity(pct) {
+    const v = applyWidgetOpacity(pct);
+    data.settings = data.settings || {};
+    data.settings.widgetOpacity = v;
+    saveData();
+}
+
 function applyTheme(themeKey) {
     const t = THEMES[themeKey] || THEMES.purple;
     const root = document.documentElement.style;
@@ -5126,6 +5237,7 @@ function renderSettings() {
 
     // Reminders toggle
     document.getElementById('remindersToggle').classList.toggle('on', !!(data.settings && data.settings.reminders));
+    applyWidgetOpacity((data.settings && data.settings.widgetOpacity) || 50);
     pasteKeepFormatting = !!(data.settings && data.settings.pasteKeepFormatting);
     document.getElementById('pasteKeepFmtToggle').classList.toggle('on', pasteKeepFormatting);
 
@@ -5271,6 +5383,7 @@ function stopDragScroll() {
 document.addEventListener('dragend', stopDragScroll);
 
 applyTheme((data.settings && data.settings.theme) || 'purple');
+applyWidgetOpacity((data.settings && data.settings.widgetOpacity) || 50);
     // Tell the main process the saved click-away choice at startup (default on)
     if (window.widgetAPI && window.widgetAPI.setCollapseOnBlur) {
         window.widgetAPI.setCollapseOnBlur(!(data.settings && data.settings.collapseOnBlur === false));
@@ -5300,6 +5413,8 @@ if (data.settings && typeof data.settings.pastePlainText === 'boolean') {
     if (ppt) ppt.classList.toggle('on', pastePlainTextDefault);
 }
 updateBadge();
+// Dates move on while Jot runs: check once a minute (see refreshDateUI).
+setInterval(refreshDateUI, 60 * 1000);
 // Always show the app version in Settings (independent of update checks)
 { const vEl = document.getElementById('appVersionText'); if (vEl) vEl.textContent = APP_VERSION; }
 

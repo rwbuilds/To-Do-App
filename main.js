@@ -108,7 +108,6 @@ function isAutoLaunchEnabled() {
 function setAutoLaunch(enabled) {
   app.setLoginItemSettings({
     openAtLogin: enabled,
-    openAsHidden: true,       // macOS hint; harmless on Windows
     args: ['--hidden'],       // passed to the app on auto-start
   });
 }
@@ -124,11 +123,34 @@ const WIDGET_SIZE = { width: 56, height: 56 };
 const EXPANDED_SIZE = { width: 440, height: 700 };
 const MIN_EXPANDED = { width: 320, height: 400 };
 
+// Remember the expanded window's size. Resizing fires many events per second (corner grip,
+// snap animation, OS edge drag on Windows), so the settings file is written at most once
+// per 400 ms instead of on every event; will-quit flushes a pending write.
+let pendingSizeSave = null;
+let sizeSaveTimer = null;
+function rememberExpandedSize(width, height) {
+  EXPANDED_SIZE.width = width;
+  EXPANDED_SIZE.height = height;
+  pendingSizeSave = { expandedW: width, expandedH: height };
+  if (sizeSaveTimer) clearTimeout(sizeSaveTimer);
+  sizeSaveTimer = setTimeout(flushExpandedSize, 400);
+}
+function flushExpandedSize() {
+  if (sizeSaveTimer) { clearTimeout(sizeSaveTimer); sizeSaveTimer = null; }
+  if (pendingSizeSave) { saveSettings(pendingSizeSave); pendingSizeSave = null; }
+}
+
 // Remembers where the widget sat so we can restore it on collapse
 let widgetAnchor = null;
 
 function createWindow() {
   const settings = loadSettings();
+
+  // macOS: floating over full-screen apps needs a menu-bar-only (UIElement) process. By default
+  // setVisibleOnAllWorkspaces makes that switch itself, which Electron's docs say hides the window
+  // and the Dock icon for a moment each time it's called. Switch once here, before the window
+  // exists, and skip the switch in that call below.
+  if (process.platform === 'darwin' && app.dock) app.dock.hide();
 
   mainWindow = new BrowserWindow({
     width: WIDGET_SIZE.width,
@@ -141,6 +163,9 @@ function createWindow() {
     alwaysOnTop: true,         // real always-on-top
     skipTaskbar: false,
     hasShadow: false,          // no OS shadow — we style our own
+    // macOS: a borderless window, so macOS draws no frame, edge or corner clip around the
+    // transparent widget, with an explicitly clear background. Windows unchanged.
+    ...(process.platform === 'darwin' ? { roundedCorners: false, backgroundColor: '#00000000' } : {}),
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -152,7 +177,7 @@ function createWindow() {
 
   // Keep it above fullscreen apps too
   mainWindow.setAlwaysOnTop(true, 'floating');
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: process.platform === 'darwin' });
 
   mainWindow.loadFile('index.html');
 
@@ -221,18 +246,12 @@ function createWindow() {
     EXPANDED_SIZE.height = Math.max(MIN_EXPANDED.height, settings.expandedH);
   }
 
-  // Persist expanded size when the user resizes (debounced)
-  let resizeSaveTimer = null;
+  // Persist the expanded size when it changes. Only while expanded, and not during a titlebar
+  // drag (dragLockSize pins the size then), so a transient size is never saved.
   mainWindow.on('resize', () => {
-    // Only while expanded (resizable) and NOT during a titlebar drag (which
-    // pins size via dragLockSize) — otherwise we'd save a transient size.
-    if (mainWindow.isResizable() && !dragLockSize) {
-      const [w, h] = mainWindow.getSize();
-      EXPANDED_SIZE.width = w;
-      EXPANDED_SIZE.height = h;
-      if (resizeSaveTimer) clearTimeout(resizeSaveTimer);
-      resizeSaveTimer = setTimeout(() => { saveSettings({ expandedW: w, expandedH: h }); }, 400);
-    }
+    if (!isExpanded || dragLockSize) return;
+    const [w, h] = mainWindow.getSize();
+    rememberExpandedSize(w, h);
   });
 
   // If launched by Windows at startup, stay hidden in the tray
@@ -278,11 +297,7 @@ function createWindow() {
     else if (nearTop)              b = { x: wa.x,          y: wa.y,          width: wa.width,        height: wa.height };
 
     if (b) {
-      tweenBounds(b, () => {
-        EXPANDED_SIZE.width = b.width;
-        EXPANDED_SIZE.height = b.height;
-        saveSettings({ expandedW: b.width, expandedH: b.height });
-      });
+      tweenBounds(b, () => rememberExpandedSize(b.width, b.height));
     }
   }
 
@@ -412,8 +427,6 @@ ipcMain.on('resize-window', (event, state) => {
       }
     }
 
-    mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height);
-
     // Anchor: keep the widget's top-left, but if that puts the window
     // off-screen, shift it back in. Prefer expanding from the widget corner.
     let x = curX;
@@ -427,7 +440,9 @@ ipcMain.on('resize-window', (event, state) => {
     }
     x = Math.max(workArea.x, x);
     y = Math.max(workArea.y, y);
-    mainWindow.setPosition(Math.round(x), Math.round(y));
+    // One bounds change instead of setSize then setPosition, so the window doesn't first
+    // grow at the widget's spot (possibly past the screen edge) and then jump into place.
+    mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: EXPANDED_SIZE.width, height: EXPANDED_SIZE.height });
 
   } else { // widget
     // Remember the expanded bounds so we can restore them next expand
@@ -479,9 +494,7 @@ ipcMain.on('resize-to', (event, w, h) => {
   const [x, y] = mainWindow.getPosition();
   try {
     mainWindow.setBounds({ x, y, width, height });
-    EXPANDED_SIZE.width = width;
-    EXPANDED_SIZE.height = height;
-    saveSettings({ expandedW: width, expandedH: height });
+    rememberExpandedSize(width, height);   // was a synchronous settings read + write on every pointer move
   } catch (e) {}
 });
 
@@ -547,7 +560,10 @@ ipcMain.on('auto-backup', (event, jsonString) => {
     const dir = path.join(app.getPath('userData'), 'backups');
     fs.mkdirSync(dir, { recursive: true });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Name the file by the local day. toISOString() gave the UTC day, so in Pacific time an
+    // evening backup was named for the next day.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const file = path.join(dir, `jot-autobackup-${today}.json`);
 
     // Only write once per day
@@ -619,26 +635,41 @@ function computeSnapBounds() {
   return null;
 }
 
+// The preview is created hidden at the first snap zone and shown once its page is ready,
+// and it's only resized when the zone changes. It used to be created visible at the default
+// 800 x 600 size and resized on every pointer move. Leaving a zone still closes it.
+let snapPreviewBounds = null;
 function showSnapPreview() {
   const b = computeSnapBounds();
   if (!b) { destroySnapPreview(); return; }
   if (!snapPreviewWin) {
     snapPreviewWin = new BrowserWindow({
+      ...b, show: false,
       frame: false, transparent: true, resizable: false, movable: false,
       focusable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
       webPreferences: { contextIsolation: true },
     });
+    snapPreviewBounds = b;
     snapPreviewWin.setIgnoreMouseEvents(true);
     snapPreviewWin.setAlwaysOnTop(true, 'screen-saver');
     snapPreviewWin.loadURL('data:text/html,' + encodeURIComponent(
       '<body style="margin:0;overflow:hidden;"><div style="width:100vw;height:100vh;box-sizing:border-box;background:rgba(124,92,252,0.22);border:2px solid rgba(124,92,252,0.8);border-radius:8px;"></div></body>'
     ));
+    snapPreviewWin.once('ready-to-show', () => {
+      if (snapPreviewWin && !snapPreviewWin.isDestroyed() && snapPreviewBounds) snapPreviewWin.showInactive();
+    });
+    return;
   }
-  snapPreviewWin.setBounds(b);
+  const same = snapPreviewBounds && ['x', 'y', 'width', 'height'].every(k => snapPreviewBounds[k] === b[k]);
+  if (!same) {
+    snapPreviewWin.setBounds(b);
+    snapPreviewBounds = b;
+  }
   if (!snapPreviewWin.isVisible()) snapPreviewWin.showInactive();
 }
 
 function destroySnapPreview() {
+  snapPreviewBounds = null;
   if (snapPreviewWin) { try { snapPreviewWin.close(); } catch (e) {} snapPreviewWin = null; }
 }
 
@@ -785,6 +816,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  flushExpandedSize();
   globalShortcut.unregisterAll();
 });
 
