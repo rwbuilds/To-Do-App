@@ -77,6 +77,14 @@
             cursor: pointer; font-size: 12px; padding: 2px 4px;
         }
         .update-banner-close:hover { color: var(--text); }
+        /* Save-failure banner: the update banner's layout with a red edge, shown above it */
+        .save-error-banner { border-color: var(--danger); z-index: 100002; }
+        .save-error-banner .update-banner-icon { color: var(--danger); }
+        .update-banner-secondary {
+            background: none; border: 1px solid var(--border); color: var(--text);
+            border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+        }
+        .update-banner-secondary:hover { background: var(--surface-hover); }
 
         /* Natural-language parse preview chip */
         .parse-preview {
@@ -128,6 +136,17 @@
             padding: 6px 8px; font-size: 13px;
         }
         .modal-actions { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+        /* Keyboard shortcut list (openShortcuts) */
+        .shortcuts-box { width: 330px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); overflow-y: auto; }
+        .shortcut-list { display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 5px; align-items: baseline; }
+        .shortcut-group { grid-column: 1 / -1; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-top: 8px; }
+        .shortcut-group:first-child { margin-top: 0; }
+        .shortcut-list kbd {
+            justify-self: start; white-space: nowrap; font: inherit; font-size: 11px; color: var(--text);
+            background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px;
+        }
+        .shortcut-list span { font-size: 12px; color: var(--text); }
+        .shortcut-note { font-size: 11px; color: var(--text-dim); }
 
         /* Note folders & tags */
         .note-folder-bar {
@@ -184,6 +203,20 @@
 
         /* Electron: window itself is sized to content, so anchor top-left */
         body.electron #widget { top: 0; left: 0; right: auto; width: 56px; height: 56px; margin: 0; cursor: grab; }
+        /* Quick add on the widget (openWidgetQuickAdd): main.js widens the widget window to 340x56 to hold it */
+        .widget-quick-add {
+            position: fixed; inset: 0; z-index: 100000; box-sizing: border-box;
+            display: flex; align-items: center; gap: 8px; padding: 0 14px;
+            background: var(--surface); color: var(--text);
+            border: 1px solid var(--accent); border-radius: 16px;
+        }
+        .widget-quick-add[hidden] { display: none; }
+        .widget-quick-add .ic { flex-shrink: 0; color: var(--accent-text); }
+        .widget-quick-add input {
+            flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+            color: var(--text); font: inherit; font-size: 13px;
+        }
+        body.widget-quick-adding #widget { display: none !important; }
         body.electron #app {
             top: 3px; left: 3px; right: 3px; bottom: 3px;
             width: auto; height: auto;
@@ -200,6 +233,8 @@
         body.widget-mode #undoToast,
         body.widget-mode #contextMenu,
         body.widget-mode #updateBanner,
+        body.widget-mode #saveErrorBanner,
+        body.widget-mode #shortcutsModal,
         body.widget-mode #taskbar-btn { display: none !important; }
         body.electron .content { max-height: none; flex: 1; min-height: 0; }
         /* Tab panels fill the window so content scrolls and the add bar stays pinned */
@@ -520,6 +555,28 @@
             padding: 8px 12px 0;
             flex-wrap: wrap;
         }
+        /* Options set for the next task, shown as chips while the options row is collapsed */
+        .add-chips { display: flex; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap; }
+        .add-chip {
+            display: inline-flex; align-items: center; gap: 3px; max-width: 100%;
+            padding: 1px 2px 1px 8px; border-radius: 12px; font-size: 11px;
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+            color: var(--text);
+        }
+        .add-chip > .ic { width: 11px; height: 11px; flex-shrink: 0; color: var(--accent-text); }
+        .add-chip:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+        .add-chip-control {
+            background: transparent; border: none; outline: none; color: inherit;
+            font: inherit; font-size: 11px; padding: 3px 0; max-width: 160px; cursor: pointer;
+        }
+        .add-chip-clear {
+            display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+            width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%;
+            background: none; color: var(--text-dim); cursor: pointer;
+        }
+        .add-chip-clear:hover, .add-chip-clear:focus-visible { background: var(--surface-hover); color: var(--text); outline: none; }
+        .add-chip-clear .ic { width: 10px; height: 10px; }
 
         /* Content area */
         .content {
@@ -1443,6 +1500,14 @@
     <span class="badge hidden" id="badge">0</span>
 </div>
 
+<!-- Quick add on the widget: Cmd/Ctrl+Shift+J while Jot is collapsed (openWidgetQuickAdd). It sits
+     outside #widget, whose click opens Jot and whose pointerdown drags the window. -->
+<div id="widgetQuickAdd" class="widget-quick-add" hidden>
+    <svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>
+    <input type="text" id="widgetQuickInput" aria-label="Add a task" placeholder="Add a task"
+           onkeydown="onWidgetQuickKey(event)" onblur="onWidgetQuickBlur()">
+</div>
+
 <!-- Taskbar button (minimized) -->
 <button id="taskbar-btn" onclick="restoreApp()">
     <svg class="ic brand-mark" aria-hidden="true"><use href="#i-pen"/></svg>Jot
@@ -1462,11 +1527,11 @@
     </div>
     <input type="file" id="importFile" accept="application/json" style="display:none;" onchange="importData(event)">
 
-    <div class="tabs">
-        <button class="tab active" data-tab="todos" onclick="switchTab('todos')">Tasks</button>
-        <button class="tab" data-tab="notes" onclick="switchTab('notes')">Notes</button>
+    <div class="tabs" role="tablist" aria-label="Views">
+        <button class="tab active" data-tab="todos" onclick="switchTab('todos')" role="tab" aria-selected="true" aria-controls="tab-todos">Tasks</button>
+        <button class="tab" data-tab="notes" onclick="switchTab('notes')" role="tab" aria-selected="false" aria-controls="tab-notes">Notes</button>
         <div style="flex:1;"></div>
-        <button class="tab settings-tab" onclick="openSettings()" title="Settings" aria-label="Settings"><svg class="ic" aria-hidden="true"><use href="#i-cog"/></svg></button>
+        <button class="tab settings-tab" onclick="openSettings()" title="Settings" aria-label="Settings" role="tab" aria-selected="false" aria-controls="settingsPanel"><svg class="ic" aria-hidden="true"><use href="#i-cog"/></svg></button>
     </div>
 
     <!-- TODOS TAB -->
@@ -1544,6 +1609,9 @@
             <input type="time" class="due-input" id="dueTimeInput" title="Due time (optional)">
         </div>
 
+        <!-- Options set for the next task, shown while the options row is collapsed (renderAddChips) -->
+        <div class="add-chips" id="addChips" style="display:none;"></div>
+
         <div class="add-bar">
             <button class="icon-pill" id="optionsToggle" onclick="toggleAddOptions()" title="More options" aria-label="More task options"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
             <input type="text" class="add-input" id="todoInput" placeholder="Add a task…  (try: tomorrow 5pm #home)" oninput="updateParsePreview()" onkeydown="if(event.key==='Enter')addTodo()">
@@ -1569,11 +1637,11 @@
         <div class="note-editor" id="noteEditor">
             <div class="note-editor-head">
                 <button class="filter-btn note-back-btn" onclick="closeNoteEditor()" title="Back to notes" aria-label="Back to notes"><svg class="ic" aria-hidden="true"><use href="#i-arrow-left"/></svg></button>
-                <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="saveCurrentNote()">
+                <input type="text" class="note-editor-title" id="noteTitle" placeholder="Note title..." oninput="scheduleNoteSave()" onblur="flushNoteSave()">
             </div>
             <div class="note-meta-row">
                 <select id="noteFolderSelect" onchange="onNoteFolderChange()" title="Folder"></select>
-                <input type="text" id="noteTagsInput" class="note-tags-input" placeholder="tags (comma separated)" oninput="onNoteTagsChange()" title="Comma-separated tags">
+                <input type="text" id="noteTagsInput" class="note-tags-input" placeholder="tags (comma separated)" oninput="onNoteTagsChange()" onblur="flushNoteSave()" title="Comma-separated tags">
             </div>
             <div class="format-toolbar" id="formatToolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:6px 8px; border-bottom:1px solid var(--border);">
                 <!-- Heading dropdown -->
@@ -1618,7 +1686,7 @@
                 </div>
             </div>
             <div class="note-find-bar" id="noteFindBar" style="display:none;">
-                <input type="text" id="noteFindInput" placeholder="Find in note…" class="search-input" style="flex:1;" oninput="noteFind()" onkeydown="if(event.key==='Enter')noteFindNext(); if(event.key==='Escape')closeNoteFind();">
+                <input type="text" id="noteFindInput" placeholder="Find in note…" class="search-input" style="flex:1;" oninput="noteFind()" onkeydown="if(event.key==='Enter')noteFindNext(); if(event.key==='Escape'){event.preventDefault();closeNoteFind();}">
                 <span id="noteFindCount" style="font-size:11px;color:var(--text-dim);white-space:nowrap;">0/0</span>
                 <button class="filter-btn" onclick="noteFindNext()" title="Next (Enter)" aria-label="Next match"><svg class="ic" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
                 <button class="filter-btn" onclick="closeNoteFind()" title="Close (Esc)" aria-label="Close find"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
@@ -1699,6 +1767,13 @@
             </div>
             <div class="settings-row" style="margin-top:8px;">
                 <div>
+                    <div class="label">Keyboard shortcuts</div>
+                    <div class="sublabel">Or press ? in Jot when you're not typing</div>
+                </div>
+                <button class="filter-btn" id="showShortcutsBtn" onclick="openShortcuts()">Show</button>
+            </div>
+            <div class="settings-row" style="margin-top:8px;">
+                <div>
                     <div class="label">Version <span id="appVersionText">—</span></div>
                     <div class="sublabel" id="updateStatusText">Check for the latest version</div>
                 </div>
@@ -1719,7 +1794,7 @@
 </div>
 
 <!-- Undo toast -->
-<div class="toast" id="undoToast">
+<div class="toast" id="undoToast" role="status" aria-live="polite">
     <span id="toastMsg">Deleted</span>
     <button onclick="undoLastDelete()">Undo</button>
 </div>
@@ -1730,6 +1805,15 @@
     <span class="update-banner-text" id="updateBannerText">A new version is available</span>
     <button class="update-banner-action" id="updateBannerAction" onclick="onUpdateBannerAction()">Restart</button>
     <button class="update-banner-close" onclick="dismissUpdateBanner()" title="Dismiss" aria-label="Dismiss"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+</div>
+
+<!-- Save-failure banner: shown while saving fails, hidden again once a save works -->
+<div class="update-banner save-error-banner" id="saveErrorBanner" role="alert">
+    <span class="update-banner-icon"><svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg></span>
+    <span class="update-banner-text" id="saveErrorText">Jot couldn't save your changes.</span>
+    <button class="update-banner-action" onclick="exportData()">Export backup</button>
+    <button class="update-banner-secondary" onclick="saveData()">Try again</button>
+    <button class="update-banner-close" onclick="document.getElementById('saveErrorBanner').classList.remove('show')" title="Hide until the next failed save" aria-label="Hide"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
 </div>
 
 <!-- Context Menu -->
@@ -1749,6 +1833,7 @@
         <div class="context-sub-menu" id="ctxSectionMenu"></div>
     </div>
     <div class="separator"></div>
+    <div class="context-menu-item" onclick="ctxRename()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-pen"/></svg>Rename</div>
     <div class="context-menu-item" onclick="ctxEditSchedule()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-calendar"/></svg>Edit date / repeat</div>
     <div class="context-menu-item" id="ctxArchive" onclick="ctxToggleArchive()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-archive"/></svg>Archive</div>
     <div class="context-menu-item" onclick="ctxDuplicate()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-copy"/></svg>Duplicate</div>
@@ -1785,10 +1870,10 @@
 
 <!-- Generic text prompt modal (replaces window.prompt, which Electron blocks) -->
 <div class="modal-overlay" id="promptModal" onclick="if(event.target===this)closePromptModal()">
-    <div class="modal-box">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="promptTitle" onkeydown="jotTrapTab(event, this)">
         <div class="modal-title" id="promptTitle">Enter a value</div>
         <label class="modal-field">
-            <input type="text" id="promptInput" onkeydown="if(event.key==='Enter')confirmPrompt(); if(event.key==='Escape')closePromptModal();">
+            <input type="text" id="promptInput" aria-labelledby="promptTitle" onkeydown="if(event.key==='Enter')confirmPrompt(); if(event.key==='Escape'){event.preventDefault();closePromptModal();}">
         </label>
         <div class="modal-actions">
             <span style="flex:1;"></span>
@@ -1798,16 +1883,33 @@
     </div>
 </div>
 
+<!-- Keyboard shortcut list: press ? when not typing, or Settings > Keyboard shortcuts (openShortcuts) -->
+<div class="modal-overlay" id="shortcutsModal" onclick="if(event.target===this)closeShortcuts()">
+    <div class="modal-box shortcuts-box" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle"
+         onkeydown="if(event.key==='Tab'){event.preventDefault();document.getElementById('shortcutsClose').focus();}">
+        <div class="modal-title" id="shortcutsTitle">Keyboard shortcuts</div>
+        <div class="shortcut-list" id="shortcutList"></div>
+        <div class="shortcut-note">The two shortcuts that work from any app do nothing if another app already uses them.</div>
+        <div class="modal-actions">
+            <span style="flex:1;"></span>
+            <button class="add-btn" id="shortcutsClose" onclick="closeShortcuts()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ===== DATA STORE =====
 const STORAGE_KEY = 'quicknotes_data';
-const APP_VERSION = '1.6.4';   // keep in sync with package.json
+const APP_VERSION = '1.6.5';   // keep in sync with package.json
 
 let data = loadData();
 let currentFilter = 'all';
 let currentSort = 'manual';   // manual | due | priority | created | alpha
 let currentTab = 'todos';
 let editingNoteId = null;
+// Typing in a note waits for a 400 ms pause before saving (see scheduleNoteSave)
+const NOTE_SAVE_DELAY = 400;
+let noteSaveTimer = null;
 let currentNoteFolder = 'all';   // 'all' | '__none__' | folder name
 let contextTargetId = null;
 let appState = 'widget'; // 'widget', 'expanded', 'minimized'
@@ -1827,6 +1929,12 @@ function loadData() {
         }
     } catch(e) {}
     return migrateData({});
+}
+
+// IDs Jot creates are letters and digits (Date.now() and Math.random() in base 36), so they are
+// safe inside the page's inline handlers and attributes. migrateData replaces any other value.
+function isSavedId(id) {
+    return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id);
 }
 
 // Normalize any loaded/imported data to the current model, filling defaults
@@ -1851,7 +1959,18 @@ function migrateData(d) {
         if (t.repeat == null) t.repeat = 'none';
         if (t.dueDate === undefined) t.dueDate = null;
         if (t.dueTime === undefined) t.dueTime = null;
-        if (!t.id) t.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        // Replace values Jot never saves itself (a hand-edited or crafted backup). The page puts
+        // these into its HTML unescaped: the ID into inline handlers like toggleTodo('<id>'),
+        // priority into a class attribute, and repeat and due time into the task row as markup.
+        if (!isSavedId(t.id)) t.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        if (t.priority != null && !['none', 'low', 'medium', 'high'].includes(t.priority)) t.priority = 'none';
+        if (!['none', 'daily', 'weekly', 'monthly'].includes(t.repeat)) t.repeat = 'none';
+        // A due time must be a real time, and it's stored as HH:MM. The reminder code in main.js
+        // couldn't read a one-digit hour like "9:00", so that reminder never fired.
+        if (t.dueTime) {
+            const tm = typeof t.dueTime === 'string' && /^([01]?\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/.exec(t.dueTime);
+            t.dueTime = tm ? tm[1].padStart(2, '0') + ':' + tm[2] : null;
+        }
     });
     // Note defaults
     d.notes.forEach(n => {
@@ -1859,7 +1978,7 @@ function migrateData(d) {
         if (n.body == null) n.body = '';
         if (n.folder === undefined) n.folder = '';
         if (!Array.isArray(n.tags)) n.tags = [];
-        if (!n.id) n.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        if (!isSavedId(n.id)) n.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);   // goes into inline handlers too
     });
     // Note folders list
     if (!Array.isArray(d.noteFolders)) d.noteFolders = [];
@@ -1867,9 +1986,31 @@ function migrateData(d) {
 }
 
 function saveData() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    // A failed save (for example when the storage is full) used to throw out of here unnoticed:
+    // Jot carried on as if it had saved, and later changes were lost when it quit. Catch it and
+    // show a banner until a save works again.
+    let failure = null;
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+        failure = e || new Error('unknown error');
+        console.error('Jot: saving failed', e);
+    }
+    showSaveError(failure);
     updateBadge();
     syncReminders();
+}
+
+// Show or clear the banner that says saving failed (err null = the last save worked).
+function showSaveError(err) {
+    const banner = document.getElementById('saveErrorBanner');
+    if (!banner) return;
+    if (!err) { banner.classList.remove('show'); return; }
+    const full = err.name === 'QuotaExceededError' || err.code === 22;
+    const why = full ? 'its storage is full' : String(err.message || err).slice(0, 80);
+    document.getElementById('saveErrorText').textContent =
+        `Jot couldn't save your changes (${why}). Export a backup so you don't lose them.`;
+    banner.classList.add('show');
 }
 
 // Send tasks with due dates to the main process for reminder scheduling
@@ -1929,6 +2070,7 @@ function onUpdateBannerAction() {
 }
 function exportData() {
     if (typeof guardBlur === 'function') guardBlur();
+    flushNoteSave();   // include a note edit that's still waiting to save
     const payload = JSON.stringify({ ...data, _exportedAt: new Date().toISOString(), _app: 'Jot', _v: 1 }, null, 2);
     const blob = new Blob([payload], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1952,9 +2094,11 @@ function importData(event) {
             const imported = JSON.parse(e.target.result);
             if (!imported.todos && !imported.notes) throw new Error('Not a Jot backup');
             if (!confirm('Restore this backup? It will replace your current tasks and notes.')) return;
+            flushNoteSave();   // a waiting note save must not land in the restored data later
             data = migrateData(imported);
             saveData();
             refreshGroupSelectors();
+            refreshSectionSelect();   // drops a picked section that the restored groups don't have
             renderTodos();
             renderNotes();
             showToast('Backup restored', null);
@@ -2010,7 +2154,70 @@ function undoLastDelete() {
 }
 
 // ===== APP STATE MANAGEMENT =====
+// ===== QUICK ADD ON THE WIDGET =====
+// Cmd/Ctrl+Shift+J while Jot is collapsed: main.js widens the widget window into a one-line task box
+// ('quick-add') and 'widget' shrinks it back. Enter adds the task through addTodo, so it's parsed and
+// placed exactly as from the task box (a picked group, section and priority included). Esc closes it,
+// and so does clicking away while it's empty; typed text stays until Enter or Esc.
+let widgetQuickOpenedAt = 0;
+function openWidgetQuickAdd() {
+    if (appState !== 'widget') return false;
+    const box = document.getElementById('widgetQuickAdd');
+    const input = document.getElementById('widgetQuickInput');
+    if (box.hidden) {
+        const tab = document.getElementById('groupFilter').value;
+        const group = document.getElementById('groupSelect').value || (tab !== 'all' && tab !== '__none__' ? tab : '');
+        input.value = '';
+        input.placeholder = group ? `Add a task to ${group}` : 'Add a task';
+        box.hidden = false;
+        document.body.classList.add('widget-quick-adding');
+        widgetQuickOpenedAt = Date.now();
+        if (window.widgetAPI && window.widgetAPI.resizeWindow) window.widgetAPI.resizeWindow('quick-add');
+    }
+    input.focus();
+    setTimeout(() => { if (!box.hidden) input.focus(); }, 80);   // again once the window has widened
+    return true;
+}
+function closeWidgetQuickAdd() {
+    const box = document.getElementById('widgetQuickAdd');
+    if (!box || box.hidden) return;
+    box.hidden = true;
+    document.body.classList.remove('widget-quick-adding');
+    document.getElementById('widgetQuickInput').value = '';
+    if (appState === 'widget' && window.widgetAPI && window.widgetAPI.resizeWindow) window.widgetAPI.resizeWindow('widget');
+}
+function onWidgetQuickKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeWidgetQuickAdd(); return; }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const text = e.target.value.trim();
+    if (text) {
+        // Add through the task box, keeping anything already typed there
+        const main = document.getElementById('todoInput');
+        const draft = main.value;
+        main.value = text;
+        addTodo();
+        main.value = draft;
+        if (draft) updateParsePreview();
+    }
+    closeWidgetQuickAdd();
+}
+function onWidgetQuickBlur() {
+    // A blur right after opening can come from the window still taking focus, so it's ignored
+    setTimeout(() => {
+        const input = document.getElementById('widgetQuickInput');
+        if (Date.now() - widgetQuickOpenedAt > 300 && !input.value.trim() && document.activeElement !== input) closeWidgetQuickAdd();
+    }, 0);
+}
+function onGlobalQuickAdd() {
+    if (openWidgetQuickAdd()) return;
+    expandApp();
+    switchTab('todos');
+    setTimeout(() => { const i = document.getElementById('todoInput'); if (i) i.focus(); }, 150);
+}
+
 function expandApp() {
+    closeWidgetQuickAdd();   // the widget's task box, if it's open
     document.body.classList.remove('widget-mode');
     document.getElementById('widget').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
@@ -2021,6 +2228,8 @@ function expandApp() {
 }
 
 function collapseToWidget() {
+    if (typeof closeShortcuts === 'function') closeShortcuts();   // the list doesn't fit the widget
+    flushNoteSave();   // save a note edit still waiting for typing to pause
     document.body.classList.add('widget-mode');
     document.getElementById('app').style.display = 'none';
     document.getElementById('widget').style.display = 'flex';
@@ -2082,6 +2291,11 @@ function updateBadge() {
 }
 
 // ===== TABS =====
+// Screen readers read the view tabs' aria-selected, so keep it in step with the active class.
+function syncTabAria() {
+    document.querySelectorAll('.tabs [role="tab"]').forEach(t => t.setAttribute('aria-selected', String(t.classList.contains('active'))));
+}
+
 function switchTab(tab) {
     currentTab = tab;
     // If leaving Notes while editing, close the editor so the editing flag clears
@@ -2092,6 +2306,7 @@ function switchTab(tab) {
     document.getElementById('settingsPanel').classList.remove('active');
     document.querySelector('.settings-tab').classList.remove('active');
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    syncTabAria();
     const todosEl = document.getElementById('tab-todos');
     const notesEl = document.getElementById('tab-notes');
     todosEl.classList.toggle('tab-hidden', tab !== 'todos');
@@ -2198,9 +2413,10 @@ function parseNaturalSchedule(text) {
         let h = parseInt(m[2], 10);
         const min = m[3] ? parseInt(m[3], 10) : 0;
         const ap = m[4].toLowerCase();
-        if (ap === 'pm' && h < 12) h += 12;
-        if (ap === 'am' && h === 12) h = 0;
-        if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+        // A 12-hour time needs an hour from 1 to 12, so "13pm" and "0am" stay in the text.
+        if (h >= 1 && h <= 12 && min >= 0 && min <= 59) {
+            if (ap === 'pm' && h < 12) h += 12;
+            if (ap === 'am' && h === 12) h = 0;
             dueTime = String(h).padStart(2,'0') + ':' + String(min).padStart(2,'0');
             s = s.replace(m[0], ' ');
         }
@@ -2220,14 +2436,16 @@ function parseNaturalSchedule(text) {
         name = name.toLowerCase().slice(0, 3);
         return months.indexOf(name);
     }
-    // Resolve a month/day to the next such date that isn't in the past
+    // Resolve a month/day to the next such date that isn't in the past, or null for a day the
+    // month doesn't have. setMonth rolled "feb 30" into March; now it stays in the text. A Feb 29
+    // goes to the next leap year.
     function resolveMonthDay(mi, day) {
-        const d = atMidnight(new Date());
-        d.setMonth(mi, day);
-        // If that date already passed this year, roll to next year
         const todayMid = atMidnight(new Date());
-        if (d < todayMid) d.setFullYear(d.getFullYear() + 1);
-        return d;
+        for (let y = todayMid.getFullYear(); y <= todayMid.getFullYear() + 4; y++) {
+            const d = new Date(y, mi, day);
+            if (d.getMonth() === mi && d >= todayMid) return d;
+        }
+        return null;
     }
 
     let dm;
@@ -2260,16 +2478,18 @@ function parseNaturalSchedule(text) {
         // "Sep 15", "September 15", "Sept 15th"
         const mi = monthIndex(dm[1]);
         const day = parseInt(dm[2], 10);
-        if (mi >= 0 && day >= 1 && day <= 31) {
-            dueDate = fmt(resolveMonthDay(mi, day));
+        const md = (mi >= 0 && day >= 1 && day <= 31) ? resolveMonthDay(mi, day) : null;
+        if (md) {
+            dueDate = fmt(md);
             s = s.replace(dm[0], ' ');
         }
     } else if ((dm = s.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\b/i))) {
         // "15 Sep", "15th September"
         const mi = monthIndex(dm[2]);
         const day = parseInt(dm[1], 10);
-        if (mi >= 0 && day >= 1 && day <= 31) {
-            dueDate = fmt(resolveMonthDay(mi, day));
+        const md = (mi >= 0 && day >= 1 && day <= 31) ? resolveMonthDay(mi, day) : null;
+        if (md) {
+            dueDate = fmt(md);
             s = s.replace(dm[0], ' ');
         }
     } else {
@@ -2283,9 +2503,17 @@ function parseNaturalSchedule(text) {
             if (target === -1) target = map[token];
             if (target != null && target >= 0) {
                 const d = atMidnight(new Date());
-                let delta = (target - d.getDay() + 7) % 7;
-                if (delta === 0) delta = 7;          // "monday" → the upcoming monday
-                d.setDate(d.getDate() + delta);
+                if (wm[1]) {
+                    // "next friday" = the Friday of next week, with weeks running Monday to Sunday.
+                    // On a Monday that's 11 days away. On a weekend next week starts in a day or
+                    // two, so it's the coming Friday, the same as plain "friday".
+                    const sinceMonday = (d.getDay() + 6) % 7;
+                    d.setDate(d.getDate() - sinceMonday + 7 + (target + 6) % 7);
+                } else {
+                    let delta = (target - d.getDay() + 7) % 7;
+                    if (delta === 0) delta = 7;          // "monday" → the upcoming monday
+                    d.setDate(d.getDate() + delta);
+                }
                 dueDate = fmt(d);
                 s = s.replace(wm[0], ' ');
             }
@@ -2394,11 +2622,12 @@ function addTodo() {
     });
 
     input.value = '';
-    document.getElementById('prioritySelect').value = 'none';
-    document.getElementById('sectionSelect').value = '';
+    // Reset the fields that describe one task: due date, time and repeat. Group, section and priority
+    // stay picked for the next tasks, shown as chips above the task box until changed or cleared.
     document.getElementById('dueInput').value = '';
     document.getElementById('dueTimeInput').value = '';
     document.getElementById('repeatSelect').value = 'none';
+    renderAddChips();
     clearParsePreview();
     saveData();
     renderTodos();
@@ -2436,7 +2665,7 @@ function refreshGroupSelectors() {
     const addSel = document.getElementById('groupSelect');
     const curAdd = addSel.value;
     addSel.innerHTML = '<option value="">No Group</option>' +
-        data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+        data.groups.map(g => `<option value="${escapeAttr(g)}">${escapeHtml(g)}</option>`).join('');
     addSel.value = curAdd;
 
     // Reset hidden filter if the active group no longer exists
@@ -2446,6 +2675,7 @@ function refreshGroupSelectors() {
     }
 
     renderGroupTabs();
+    renderAddChips();   // the picked group may be gone, or the open tab may have changed
 }
 
 function renderGroupTabs() {
@@ -2469,12 +2699,12 @@ function renderGroupTabs() {
             : base + ' background:transparent; color:var(--text-dim);';
         return `
         <div class="group-tab ${isActive ? 'active' : ''}" style="${style}"
-             onclick="selectGroupTab('${t.key.replace(/'/g, "\\'")}')"
+             onclick="selectGroupTab(${jsArg(t.key)})"
              ondragover="event.preventDefault(); this.style.outline='2px solid var(--accent)';"
              ondragleave="this.style.outline='';"
-             ondrop="event.preventDefault(); this.style.outline=''; dropOnGroupTab('${t.key.replace(/'/g, "\\'")}');">
+             ondrop="event.preventDefault(); this.style.outline=''; dropOnGroupTab(${jsArg(t.key)});">
             <span>${escapeHtml(t.label)}</span>
-            ${t.deletable ? `<span class="gt-del" style="font-size:10px; opacity:0.6; cursor:pointer;" onclick="event.stopPropagation(); deleteGroup('${t.key.replace(/'/g, "\\'")}')" title="Delete group">${ic('x')}</span>` : ''}
+            ${t.deletable ? `<span class="gt-del" style="font-size:10px; opacity:0.6; cursor:pointer;" onclick="event.stopPropagation(); deleteGroup(${jsArg(t.key)})" title="Delete group">${ic('x')}</span>` : ''}
         </div>`;
     };
 
@@ -2484,7 +2714,12 @@ function renderGroupTabs() {
 function selectGroupTab(key) {
     document.getElementById('groupFilter').value = key;
     renderGroupTabs();
+    refreshSectionSelect();   // the section list follows the group new tasks go to
     renderTodos();
+    // Open the tab at the top of its list, so the group's own header is the first thing shown.
+    // The list keeps its scroll position across renders, so a tab opened while scrolled down used to
+    // start partway through, or at the end of, the new list.
+    document.getElementById('todoList').scrollTop = 0;
 }
 
 // Drop a task onto a group tab to reassign it
@@ -2557,7 +2792,12 @@ function editSubtask(taskId, index, spanEl) {
     spanEl.replaceWith(input);
     input.focus();
     input.select();
+    // Only the first of Enter, Escape or losing focus counts (see startEditTodo). Here a second
+    // commit after Enter on an emptied subtask would also delete the subtask after it.
+    let ended = false;
     const commit = () => {
+        if (ended) return;
+        ended = true;
         const v = input.value.trim();
         if (v) todo.subtasks[index].text = v;
         else todo.subtasks.splice(index, 1); // empty → remove
@@ -2566,7 +2806,7 @@ function editSubtask(taskId, index, spanEl) {
     };
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        else if (e.key === 'Escape') { e.preventDefault(); renderTodos(); }
+        else if (e.key === 'Escape') { e.preventDefault(); if (!ended) { ended = true; renderTodos(); } }
     });
     input.addEventListener('blur', commit);
 }
@@ -2595,11 +2835,22 @@ function spawnNextOccurrence(todo) {
     // Local calendar math. Reading the due day as UTC and printing the UTC day made a repeat with no
     // due date skip a day after 5 PM Pacific, and daily and weekly repeats land a day early across
     // the spring clock change.
-    let base = todo.dueDate ? parseLocalDate(todo.dueDate) : startOfToday();
-    if (isNaN(base)) base = startOfToday();
-    if (todo.repeat === 'daily') base.setDate(base.getDate() + 1);
-    else if (todo.repeat === 'weekly') base.setDate(base.getDate() + 7);
-    else if (todo.repeat === 'monthly') addMonthsClamped(base, 1);   // Jan 31 -> Feb 28, not Mar 3
+    let first = todo.dueDate ? parseLocalDate(todo.dueDate) : startOfToday();
+    if (isNaN(first)) first = startOfToday();
+    if (!['daily', 'weekly', 'monthly'].includes(todo.repeat)) return;
+    // The next copy is due on the first date in the task's series that comes after today.
+    // Stepping once from the old due date brought a task finished late back already overdue:
+    // a daily task finished three days late came back due two days ago.
+    const step = k => {
+        const d = new Date(first);
+        if (todo.repeat === 'daily') d.setDate(d.getDate() + k);
+        else if (todo.repeat === 'weekly') d.setDate(d.getDate() + 7 * k);
+        else addMonthsClamped(d, k);   // from the old due date each time: Aug 31 -> Sep 30, Oct 31
+        return d;
+    };
+    const today = startOfToday();
+    let k = 1, base = step(1);
+    while (base <= today && k < 5000) base = step(++k);
 
     const nextDue = localDateStr(base);
     // Avoid duplicating if an identical open recurrence already exists
@@ -2626,14 +2877,35 @@ function spawnNextOccurrence(todo) {
     showToast('↻ Next occurrence scheduled for ' + formatDate(nextDue), null);
 }
 
+// Delete and Duplicate redraw the list, so the row or button that had keyboard focus is gone and
+// focus fell back to the page. These keep it on a task: only when focus was in the task list or the
+// ⋯ menu, so it's never taken from the task box.
+function jotFocusInTaskList() {
+    const a = document.activeElement;
+    return !!(a && (document.getElementById('todoList').contains(a) || (typeof jotMenuHasFocus === 'function' && jotMenuHasFocus())));
+}
+function focusTaskCheck(ids) {
+    for (const id of ids) {
+        const el = id && document.querySelector(`#todoList .todo-item[data-id="${id}"] .todo-check`);
+        if (el) { el.focus(); return; }
+    }
+    const first = document.querySelector('#todoList .todo-check');
+    (first || document.getElementById('todoInput')).focus();   // the list is empty now
+}
+
 function deleteTodo(id) {
     const index = data.todos.findIndex(t => t.id === id);
     if (index === -1) return;
+    const keepFocus = jotFocusInTaskList();
+    const shown = [...document.querySelectorAll('#todoList .todo-item')].map(r => r.dataset.id);
+    const at = shown.indexOf(id);
     const item = data.todos[index];
     data.todos.splice(index, 1);
     saveData();
     renderTodos();
     showToast('Task deleted', { type: 'todos', items: [{ item, index }] });
+    // Focus moves to the next task, or the previous one when this was the last
+    if (keepFocus) focusTaskCheck(at >= 0 ? [shown[at + 1], shown[at - 1]] : []);
 }
 
 // ===== INLINE EDIT =====
@@ -2655,13 +2927,23 @@ function startEditTodo(id, textEl) {
     input.select();
     autoGrow();
 
+    // Enter, Escape and losing focus can each end the edit, and only the first one counts. The
+    // blur that can follow Escape (the editor is removed while it has focus) would otherwise save
+    // the text Escape was meant to discard.
+    let ended = false;
     const commit = () => {
+        if (ended) return;
+        ended = true;
         const val = input.value.replace(/\s+$/,''); // trim trailing whitespace/newlines
         if (val) todo.text = val;
         saveData();
         renderTodos();
     };
-    const cancel = () => renderTodos();
+    const cancel = () => {
+        if (ended) return;
+        ended = true;
+        renderTodos();
+    };
 
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', (e) => {
@@ -2711,7 +2993,7 @@ function renderTodos() {
         if (currentFilter === 'done' && !t.completed) return false;
         if (groupFilter === '__none__' && t.group) return false;
         if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
-        if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
+        if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => String(tag).toLowerCase().includes(search))) return false;
         return true;
     });
 
@@ -2723,8 +3005,21 @@ function renderTodos() {
     const container = document.getElementById('todoList');
     container.classList.toggle('multi-select-mode', multiSelectMode);
 
-    if (todos.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">${ic(currentFilter === 'done' ? 'circle-check' : currentFilter === 'wip' ? 'wrench' : 'inbox')}</div><p>${currentFilter === 'done' ? 'No completed tasks yet' : currentFilter === 'wip' ? 'Nothing in progress' : 'No tasks — add one below!'}</p></div>`;
+    // In Completed/Archived views, only show sections/groups that actually
+    // contain matching tasks — empty section headers would just be clutter.
+    const hideEmptySections = (currentFilter === 'done' || currentFilter === 'archived');
+    // Groups shown even when no tasks match, so a group's header and its Add section button can
+    // always be reached: the group whose tab is open, and in the All and Active views a group with
+    // no tasks yet. Without this a new group had no header, so it couldn't get sections until a
+    // task was added to it. Not while searching, and not in Completed/Archived.
+    const pinnedGroups = (search || hideEmptySections) ? [] : data.groups.filter(g =>
+        g === groupFilter ||
+        (groupFilter === 'all' && (currentFilter === 'all' || currentFilter === 'active') &&
+         !data.todos.some(t => t.group === g && !t.archived)));
+    const emptyState = `<div class="empty-state"><div class="icon">${ic(currentFilter === 'done' ? 'circle-check' : currentFilter === 'wip' ? 'wrench' : 'inbox')}</div><p>${currentFilter === 'done' ? 'No completed tasks yet' : currentFilter === 'wip' ? 'Nothing in progress' : 'No tasks — add one below!'}</p></div>`;
+
+    if (todos.length === 0 && !pinnedGroups.length) {
+        container.innerHTML = emptyState;
     } else {
         // Group tasks by their group field
         const grouped = {};
@@ -2739,9 +3034,6 @@ function renderTodos() {
         });
 
         let html = '';
-        // In Completed/Archived views, only show sections/groups that actually
-        // contain matching tasks — empty section headers would just be clutter.
-        const hideEmptySections = (currentFilter === 'done' || currentFilter === 'archived');
         // Grouped sections first (in group order) — but NOT when viewing Ungrouped tab
         if (groupFilter !== '__none__') {
             data.groups.forEach(g => {
@@ -2751,7 +3043,7 @@ function renderTodos() {
                 const sections = data.sections[g] || [];
                 // Show the group if it has tasks OR sections defined.
                 // In Completed/Archived, require actual tasks (no empty group headers).
-                const showGroup = hideEmptySections ? groupTasks.length > 0 : (groupTasks.length || sections.length);
+                const showGroup = hideEmptySections ? groupTasks.length > 0 : (groupTasks.length || sections.length || pinnedGroups.includes(g));
                 if (showGroup) {
                     html += renderGroupHeader(g, groupTasks.length);
                     // Sub-group by section within this group
@@ -2794,6 +3086,7 @@ function renderTodos() {
             if (data.groups.length) html += renderGroupHeader('Ungrouped', ungrouped.length, true);
             html += ungrouped.map(renderTodoItem).join('');
         }
+        if (!todos.length) html += emptyState;
         container.innerHTML = html;
     }
 
@@ -2826,8 +3119,8 @@ function renderTodos() {
 }
 
 function renderGroupHeader(name, count, ungrouped) {
-    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup('${escapeHtml(name)}')" title="Delete group" style="width:18px;height:18px;flex-shrink:0;">${ic('x')}</button>`;
-    const addSecBtn = ungrouped ? '' : `<button class="todo-action-btn" onclick="promptAddSection('${escapeHtml(name)}')" title="Add section" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">+</button>`;
+    const delBtn = ungrouped ? '' : `<button class="todo-action-btn delete" onclick="deleteGroup(${jsArg(name)})" title="Delete group" style="width:18px;height:18px;flex-shrink:0;">${ic('x')}</button>`;
+    const addSecBtn = ungrouped ? '' : `<button class="todo-action-btn" onclick="promptAddSection(${jsArg(name)})" title="Add section" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">+</button>`;
 
     // Collapse/expand-all toggle (only if the group has sections)
     const sections = ungrouped ? [] : (data.sections[name] || []);
@@ -2837,10 +3130,10 @@ function renderGroupHeader(name, count, ungrouped) {
         // All collapsible section keys for this group (incl. General)
         const keys = ['__general__', ...sections].map(s => name + ':' + s);
         const allCollapsed = keys.every(k => collapsedSections.has(k));
-        collapseBtn = `<button class="todo-action-btn" onclick="toggleCollapseAll('${escapeHtml(name)}')" title="${allCollapsed ? 'Expand all' : 'Collapse all'}" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">${allCollapsed ? '⊞' : '⊟'}</button>`;
+        collapseBtn = `<button class="todo-action-btn" onclick="toggleCollapseAll(${jsArg(name)})" title="${allCollapsed ? 'Expand all' : 'Collapse all'}" style="width:18px;height:18px;flex-shrink:0;font-size:11px;">${allCollapsed ? '⊞' : '⊟'}</button>`;
         // Quick section navigation chips (group-specific)
         navButtons = `<div class="section-nav" style="display:flex; gap:4px; flex-wrap:wrap; margin:2px 0 4px 12px;">` +
-            sections.map(s => `<button class="sec-nav-btn" onclick="scrollToSection('${escapeHtml(name)}','${escapeHtml(s).replace(/'/g,"\\'")}')" title="Go to ${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('') +
+            sections.map(s => `<button class="sec-nav-btn" onclick="scrollToSection(${jsArg(name)},${jsArg(s)})" title="Go to ${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('') +
             `</div>`;
     }
 
@@ -2860,16 +3153,16 @@ function renderSectionHeader(groupName, sectionName, count, isGeneral) {
     const isCollapsed = collapsedSections.has(key);
     const arrow = ic(isCollapsed ? 'chevron-right' : 'chevron-down', 'ic-caret');
     const dragAttrs = isGeneral ? '' : `draggable="true"
-         data-group="${escapeHtml(groupName)}" data-section="${escapeHtml(sectionName)}"
-         ondragstart="onSectionDragStart(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')"
+         data-group="${escapeAttr(groupName)}" data-section="${escapeAttr(sectionName)}"
+         ondragstart="onSectionDragStart(event, ${jsArg(groupName)}, ${jsArg(sectionName)})"
          ondragover="event.preventDefault(); autoScrollDuringDrag(event); this.style.borderBottom='2px solid var(--accent)';"
          ondragleave="this.style.borderBottom='';"
-         ondrop="event.preventDefault(); this.style.borderBottom=''; onSectionOrTaskDrop(event, '${escapeHtml(groupName)}', '${escapeHtml(sectionName)}');"`;
-    const delBtn = isGeneral ? '' : `<button class="todo-action-btn delete" onclick="deleteSection('${escapeHtml(groupName)}', '${escapeHtml(sectionName)}')" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">${ic('x')}</button>`;
+         ondrop="event.preventDefault(); this.style.borderBottom=''; onSectionOrTaskDrop(event, ${jsArg(groupName)}, ${jsArg(sectionName)});"`;
+    const delBtn = isGeneral ? '' : `<button class="todo-action-btn delete" onclick="deleteSection(${jsArg(groupName)}, ${jsArg(sectionName)})" title="Delete section" style="width:16px;height:16px;flex-shrink:0;font-size:9px;">${ic('x')}</button>`;
     const nameColor = isGeneral ? 'var(--text-dim)' : 'var(--accent)';
-    return `<div class="section-header" data-anchor="${escapeHtml(groupName + '::' + secId)}" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px; ${isGeneral ? '' : 'cursor:grab;'}"
+    return `<div class="section-header" data-anchor="${escapeAttr(groupName + '::' + secId)}" style="display:flex; flex-direction:row; align-items:center; gap:6px; padding:6px 4px 2px; margin-left:12px; ${isGeneral ? '' : 'cursor:grab;'}"
          ${dragAttrs}>
-        <span style="cursor:pointer; font-size:10px; color:${nameColor};" onclick="toggleSectionCollapse('${escapeHtml(groupName)}', '${escapeHtml(secId)}')">${arrow}</span>
+        <span style="cursor:pointer; font-size:10px; color:${nameColor};" onclick="toggleSectionCollapse(${jsArg(groupName)}, ${jsArg(secId)})">${arrow}</span>
         <span style="color:${nameColor}; font-size:9px; font-weight:600; letter-spacing:0.3px; flex-shrink:0;">${escapeHtml(sectionName)}</span>
         <span style="color:var(--text-dim); font-size:9px; flex-shrink:0;">${count}</span>
         <div style="flex:1; height:1px; background:var(--border);"></div>
@@ -2901,7 +3194,10 @@ function promptAddSection(groupName) {
     input.className = 'search-input';
     input.style.cssText = 'max-width:160px; margin:4px 0 4px 12px; font-size:11px;';
 
+    let ended = false;   // only the first of Enter, Escape or losing focus counts (see startEditTodo)
     const commit = () => {
+        if (ended) return;
+        ended = true;
         const name = input.value.trim();
         input.remove();
         if (name) {
@@ -2916,7 +3212,7 @@ function promptAddSection(groupName) {
     };
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        else if (e.key === 'Escape') { e.preventDefault(); input.remove(); }
+        else if (e.key === 'Escape') { e.preventDefault(); ended = true; input.remove(); }
     });
     input.addEventListener('blur', commit);
 
@@ -2944,8 +3240,80 @@ function refreshSectionSelect() {
         if (activeTab && activeTab !== 'all' && activeTab !== '__none__') group = activeTab;
     }
     const sections = group ? (data.sections[group] || []) : [];
+    const keep = sel.value;   // keep the chosen section while it still belongs to this group
     sel.innerHTML = '<option value="">No Section</option>' +
-        sections.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+        sections.map(s => `<option value="${escapeAttr(s)}">${escapeHtml(s)}</option>`).join('');
+    sel.value = sections.includes(keep) ? keep : '';
+    renderAddChips();
+}
+
+// Options that differ from their defaults, shown as chips above the add bar while the options row is
+// collapsed. Group, section and priority stay picked between tasks, so this keeps them visible: each
+// chip changes its option in place, and its × puts the default back.
+function renderAddChips(focusId) {
+    const box = document.getElementById('addChips');
+    const panel = document.getElementById('addOptions');
+    if (!box || !panel) return;
+    const fields = [
+        { id: 'prioritySelect', name: 'priority', none: 'none', icon: 'flag' },
+        { id: 'groupSelect', name: 'group', none: '', icon: 'folder' },
+        { id: 'sectionSelect', name: 'section', none: '', icon: 'list' },
+        { id: 'repeatSelect', name: 'repeat', none: 'none', icon: 'repeat' },
+        { id: 'dueInput', name: 'due date', none: '', icon: 'calendar' },
+        { id: 'dueTimeInput', name: 'due time', none: '' },
+    ];
+    // The open group tab already shows its group, so a chip for that group would only repeat it.
+    // A different group keeps its chip, since the task goes there and drops out of this view.
+    const tabEl = document.getElementById('groupFilter');
+    const openTab = tabEl ? tabEl.value : 'all';
+    const active = panel.style.display !== 'none' ? [] : fields.filter(f => {
+        const el = document.getElementById(f.id);
+        if (!el || el.value === f.none) return false;
+        return !(f.id === 'groupSelect' && el.value === openTab);
+    });
+    box.innerHTML = '';
+    box.style.display = active.length ? 'flex' : 'none';
+    active.forEach(f => {
+        const real = document.getElementById(f.id);
+        const chip = document.createElement('span');
+        chip.className = 'add-chip';
+        if (f.icon) chip.innerHTML = ic(f.icon);
+        const ctl = real.cloneNode(true);   // the same choices as the options row
+        ctl.removeAttribute('id');
+        ctl.removeAttribute('onchange');
+        ctl.className = 'add-chip-control';
+        ctl.dataset.for = f.id;
+        ctl.setAttribute('aria-label', 'Next task ' + f.name);
+        ctl.value = real.value;
+        // A long group or section name gets cut off in the chip, so the tooltip shows all of it
+        const shown = ctl.tagName === 'SELECT' && ctl.selectedIndex >= 0 ? ctl.options[ctl.selectedIndex].text : ctl.value;
+        ctl.title = f.name.charAt(0).toUpperCase() + f.name.slice(1) + ': ' + shown;
+        ctl.addEventListener('change', () => setAddOption(f.id, ctl.value));
+        const clear = document.createElement('button');
+        clear.type = 'button';
+        clear.className = 'add-chip-clear';
+        clear.title = 'Clear ' + f.name;
+        clear.setAttribute('aria-label', 'Clear ' + f.name);
+        clear.innerHTML = ic('x');
+        clear.addEventListener('click', () => setAddOption(f.id, f.none));
+        chip.append(ctl, clear);
+        box.appendChild(chip);
+    });
+    // Keep focus on the chip just changed. If that chip is gone (cleared, set back to its default,
+    // or now matching the open group tab), move focus to the task box.
+    if (focusId) {
+        const again = box.querySelector(`[data-for="${focusId}"]`);
+        (again || document.getElementById('todoInput')).focus();
+    }
+}
+
+// Set an add-bar option from its chip. A new group rebuilds the section list, which drops a section
+// from another group.
+function setAddOption(id, value) {
+    document.getElementById(id).value = value;
+    if (id === 'groupSelect') refreshSectionSelect();
+    renderAddChips(id);
+    updateParsePreview();
 }
 
 // One icon set for the whole app: SVG symbols in #jot-icons, drawn in the current text colour.
@@ -2978,6 +3346,8 @@ function renderTodoItem(t) {
              ondrop="onTodoDrop(event, '${t.id}')"
              ondragend="onTodoDragEnd(event)">
             <div class="todo-check ${multiSelectMode ? (isSelected ? 'selected' : '') : (t.completed ? 'checked' : '')}"
+                 role="checkbox" tabindex="0" aria-checked="${multiSelectMode ? isSelected : !!t.completed}"
+                 aria-label="${multiSelectMode ? 'Select' : 'Done'}" onkeydown="onCheckKey(event, this)"
                  onclick="${multiSelectMode ? `toggleSelect('${t.id}')` : `toggleTodo('${t.id}')`}"
                  title="${multiSelectMode ? 'Select' : 'Mark done'}"></div>
             <div class="todo-body">
@@ -2986,7 +3356,7 @@ function renderTodoItem(t) {
                     ${priorityLabel ? `<span class="todo-priority prio-${t.priority}" title="Priority: ${priorityLabel}"><span class="prio-flag" aria-hidden="true">${ic('flag')}</span>${priorityLabel}</span>` : ''}
                     ${t.repeat && t.repeat !== 'none' ? `<span class="todo-tag" style="background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent-text);">${ic('repeat')} ${t.repeat}</span>` : ''}
                     ${(t.subtasks && t.subtasks.length) ? `<span class="todo-tag" style="background:var(--surface-hover);color:var(--text-dim);">${ic('list-checks')} ${t.subtasks.filter(s=>s.done).length}/${t.subtasks.length}</span>` : ''}
-                    ${(t.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${tag}</span>`).join('')}
+                    ${(t.tags || []).map(tag => `<span class="todo-tag tag-${getTagColor(tag)}">#${escapeHtml(tag)}</span>`).join('')}
                     ${t.dueDate ? `<span class="todo-date ${isOverdue ? 'overdue' : ''}">${ic(isOverdue ? 'alert' : 'calendar')} ${formatDate(t.dueDate)}${t.dueTime ? ' ' + formatTime(t.dueTime) : ''}</span>` : ''}
                 </div>
                 ${renderSubtasks(t)}
@@ -3012,10 +3382,29 @@ function renderSubtasks(t) {
              ondragleave="onSubtaskDragLeave(event)"
              ondrop="onSubtaskDrop(event, '${t.id}', ${i})"
              ondragend="onSubtaskDragEnd(event)">
-            <div class="subtask-check ${s.done ? 'checked' : ''}" onclick="toggleSubtask('${t.id}', ${i})"></div>
+            <div class="subtask-check ${s.done ? 'checked' : ''}" role="checkbox" tabindex="0" aria-checked="${!!s.done}" aria-label="Subtask done" onkeydown="onCheckKey(event, this)" onclick="toggleSubtask('${t.id}', ${i})"></div>
             <span class="subtask-text ${s.done ? 'done' : ''}" ondblclick="editSubtask('${t.id}', ${i}, this)">${escapeHtml(s.text)}</span>
             <button class="subtask-del" onclick="deleteSubtask('${t.id}', ${i})" title="Remove" aria-label="Remove subtask">${ic('x')}</button>
         </div>`).join('') + `</div>`;
+}
+
+// Enter or Space on a task's or subtask's checkbox works like a click. A toggle redraws the list,
+// so focus goes back to the same checkbox, or to the one now in its place when the task leaves
+// the view (a task completed in the Active view, for example).
+function onCheckKey(e, el) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();   // Space would scroll the list
+    const checks = () => [...document.querySelectorAll('#todoList .todo-check, #todoList .subtask-check')];
+    const index = checks().indexOf(el);
+    const sub = el.closest('.subtask-item');
+    const row = el.closest('.todo-item');
+    const same = sub
+        ? `#todoList .subtask-item[data-task-id="${sub.dataset.taskId}"][data-sub-index="${sub.dataset.subIndex}"] .subtask-check`
+        : `#todoList .todo-item[data-id="${row ? row.dataset.id : ''}"] .todo-check`;
+    el.click();
+    const now = checks();
+    const next = document.querySelector(same) || now[Math.min(index, now.length - 1)];
+    if (next) next.focus();
 }
 
 // ===== DRAG TO REORDER =====
@@ -3354,7 +3743,7 @@ function toggleMultiSelect() {
             if (currentFilter === 'done' && !t.completed) return;
             if (groupFilter === '__none__' && t.group) return;
             if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return;
-            if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return;
+            if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => String(tag).toLowerCase().includes(search))) return;
             selectedIds.add(t.id);
         });
         document.getElementById('multiSelectBar').style.display = '';
@@ -3385,7 +3774,10 @@ function promptAddGroup() {
     input.style.maxWidth = '140px';
     input.style.flexShrink = '0';
 
+    let ended = false;   // only the first of Enter, Escape or losing focus counts (see startEditTodo)
     const commit = () => {
+        if (ended) return;
+        ended = true;
         const name = input.value.trim();
         input.remove();
         if (name && !data.groups.includes(name)) {
@@ -3397,7 +3789,7 @@ function promptAddGroup() {
     };
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        else if (e.key === 'Escape') { e.preventDefault(); input.remove(); }
+        else if (e.key === 'Escape') { e.preventDefault(); ended = true; input.remove(); }
     });
     input.addEventListener('blur', commit);
 
@@ -3413,6 +3805,7 @@ function toggleAddOptions() {
     const show = opts.style.display === 'none';
     opts.style.display = show ? 'flex' : 'none';
     btn.classList.toggle('active', show);
+    renderAddChips();
 }
 
 function toggleSelectAll() {
@@ -3426,7 +3819,7 @@ function toggleSelectAll() {
         if (currentFilter === 'done' && !t.completed) return false;
         if (groupFilter === '__none__' && t.group) return false;
         if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
-        if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
+        if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => String(tag).toLowerCase().includes(search))) return false;
         return true;
     });
 
@@ -3485,7 +3878,7 @@ function refreshMassGroupSelect() {
     const sel = document.getElementById('massGroupSelect');
     if (!sel) return;
     sel.innerHTML = '<option value="">Move to…</option><option value="__none__">No Group</option>' +
-        data.groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+        data.groups.map(g => `<option value="${escapeAttr(g)}">${escapeHtml(g)}</option>`).join('');
 }
 
 function toggleSelect(id) {
@@ -3519,7 +3912,7 @@ function updateSelectedCount() {
             if (currentFilter === 'done' && !t.completed) return false;
             if (groupFilter === '__none__' && t.group) return false;
             if (groupFilter !== 'all' && groupFilter !== '__none__' && t.group !== groupFilter) return false;
-            if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => tag.includes(search))) return false;
+            if (search && !(t.text||'').toLowerCase().includes(search) && !(t.tags||[]).some(tag => String(tag).toLowerCase().includes(search))) return false;
             return true;
         });
         const allSelected = visible.length > 0 && visible.every(t => selectedIds.has(t.id));
@@ -3577,6 +3970,7 @@ function createNote() {
 }
 
 function openNoteEditor(id) {
+    flushNoteSave();   // the note being left keeps its last keystrokes
     editingNoteId = id;
     if (window.widgetAPI && window.widgetAPI.setEditing) window.widgetAPI.setEditing(true);
     const note = data.notes.find(n => n.id === id);
@@ -3599,6 +3993,7 @@ function openNoteEditor(id) {
 }
 
 function closeNoteEditor() {
+    flushNoteSave();
     editingNoteId = null;
     if (window.widgetAPI && window.widgetAPI.setEditing) window.widgetAPI.setEditing(false);
     closeNoteFind();
@@ -3624,32 +4019,76 @@ function closeNoteFind() {
     if (bar) bar.style.display = 'none';
     if (window.getSelection) window.getSelection().removeAllRanges();
 }
+// Find in a note shows which match is selected, as "k/N" (it used to show "•/N").
+function noteFindCount(term) {
+    const text = (document.getElementById('noteBody').innerText || '').toLowerCase();
+    return term ? text.split(term.toLowerCase()).length - 1 : 0;
+}
+// Which match the browser's find selected, counted from the start of the note (0 = not in the note)
+function noteFindPosition(term) {
+    const body = document.getElementById('noteBody');
+    const sel = window.getSelection();
+    if (!term || !sel || !sel.rangeCount) return 0;
+    const r = sel.getRangeAt(0);
+    if (!body.contains(r.startContainer)) return 0;
+    const before = document.createRange();
+    before.selectNodeContents(body);
+    before.setEnd(r.startContainer, r.startOffset);
+    return before.toString().toLowerCase().split(term.toLowerCase()).length;
+}
+// Select the next match with the browser's find. It searches the whole window, so skip any match
+// outside the note.
+function noteFindStep(term, matches) {
+    if (typeof window.find !== 'function') return 0;
+    for (let i = 0; i <= matches + 5; i++) {
+        if (!window.find(term, false, false, true)) return 0;   // wraps around at the end
+        const k = noteFindPosition(term);
+        if (k) return k;
+    }
+    return 0;
+}
 function noteFind() {
     const term = document.getElementById('noteFindInput').value;
-    const body = document.getElementById('noteBody');
-    const text = body.innerText || '';
     const countEl = document.getElementById('noteFindCount');
-    if (!term) { countEl.textContent = '0/0'; return; }
-    // Count occurrences (case-insensitive)
-    const matches = text.toLowerCase().split(term.toLowerCase()).length - 1;
-    countEl.textContent = matches ? ('•/' + matches) : '0/0';
-    if (matches > 0) {
-        // Jump to first match using the browser's find
-        window.getSelection().removeAllRanges();
-        window.find(term, false, false, true);
-    }
+    const matches = noteFindCount(term);
+    if (!matches) { countEl.textContent = '0/0'; return; }
+    window.getSelection().removeAllRanges();   // start from the top
+    const k = noteFindStep(term, matches);
+    countEl.textContent = (k || '–') + '/' + matches;
 }
 function noteFindNext() {
     const term = document.getElementById('noteFindInput').value;
-    if (term) window.find(term, false, false, true); // wrap-around
+    const countEl = document.getElementById('noteFindCount');
+    const matches = noteFindCount(term);
+    if (!matches) { countEl.textContent = '0/0'; return; }
+    const k = noteFindStep(term, matches);
+    countEl.textContent = (k || '–') + '/' + matches;
+}
+
+// Typing in a note used to save all of Jot's data on every keystroke. That's quick for text, but
+// with pasted images each save copies every image, which can make typing lag. Typing now saves
+// once it pauses for NOTE_SAVE_DELAY. Anything that leaves the note, reads it, or restores a
+// backup saves a waiting edit first (flushNoteSave), and so does quitting (beforeunload).
+function scheduleNoteSave() {
+    if (noteSaveTimer) clearTimeout(noteSaveTimer);
+    noteSaveTimer = setTimeout(flushNoteSave, NOTE_SAVE_DELAY);
+}
+// Save now if a save is waiting. With nothing waiting it does nothing, so closing a note
+// never rewrites it.
+function flushNoteSave() {
+    if (!noteSaveTimer) return;
+    saveCurrentNote();   // clears the timer
 }
 
 function onNoteInput() {
-    saveCurrentNote();
+    scheduleNoteSave();
+    updateCharCount();   // the word count stays live while the save waits
     updateToolbarState();
 }
 
 function saveCurrentNote() {
+    // A direct save (paste, formatting, blur) covers any waiting one
+    if (noteSaveTimer) { clearTimeout(noteSaveTimer); noteSaveTimer = null; }
     if (!editingNoteId) return;
     const note = data.notes.find(n => n.id === editingNoteId);
     if (!note) return;
@@ -3665,6 +4104,7 @@ function saveCurrentNote() {
 // Export the currently-open note as a .txt file (plain text of its content)
 function exportCurrentNote() {
     if (!editingNoteId) return;
+    flushNoteSave();   // the export reads the saved title
     const note = data.notes.find(n => n.id === editingNoteId);
     if (!note) return;
     const format = arguments[0] === 'md' ? 'md' : 'txt';
@@ -3771,10 +4211,24 @@ function htmlToMarkdown(rootEl) {
             lines.push('');
         } else if (tag === 'br') {
             lines.push('');
+        } else if (tag === 'table') {
+            // A Markdown table: the first row is the header, then a separator row. Without this case
+            // every cell's text ran together on one line.
+            const cell = c => inline(c).replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+            const rows = Array.from(node.querySelectorAll('tr')).filter(r => r.closest('table') === node);
+            const grid = rows.map(r => Array.from(r.children).filter(c => /^(td|th)$/i.test(c.tagName)).map(cell));
+            const width = Math.max(0, ...grid.map(r => r.length));
+            if (width) {
+                const row = r => '| ' + Array.from({ length: width }, (_, i) => r[i] || '').join(' | ') + ' |';
+                lines.push(row(grid[0]));
+                lines.push('|' + ' --- |'.repeat(width));
+                grid.slice(1).forEach(r => lines.push(row(r)));
+                lines.push('');
+            }
         } else if (tag === 'div' || tag === 'p') {
             // A div/p may itself contain block-level children (lists, headings)
             const hasBlockChild = Array.from(node.childNodes).some(c =>
-                c.nodeType === 1 && /^(ul|ol|h[1-6]|blockquote|pre|div|p)$/i.test(c.tagName));
+                c.nodeType === 1 && /^(ul|ol|h[1-6]|blockquote|pre|div|p|table)$/i.test(c.tagName));
             if (hasBlockChild) {
                 node.childNodes.forEach(block);
             } else {
@@ -3793,6 +4247,7 @@ function htmlToMarkdown(rootEl) {
 
 function deleteCurrentNote() {
     if (!editingNoteId) return;
+    flushNoteSave();   // so Undo brings back the latest text
     const index = data.notes.findIndex(n => n.id === editingNoteId);
     if (index !== -1) {
         const item = data.notes[index];
@@ -4001,9 +4456,13 @@ function fmtLink() {
     input.style.flex = '1';
     input.style.minWidth = '120px';
 
-    const cleanup = () => input.remove();
+    // Only the first of Enter, Escape or losing focus counts (see startEditTodo). The blur that can
+    // follow would otherwise insert the link after Escape, or a second time after Enter.
+    let ended = false;
+    const cleanup = () => { ended = true; input.remove(); };
 
     const apply = () => {
+        if (ended) return;
         let url = input.value.trim();
         cleanup();
         if (!url) return;
@@ -4037,7 +4496,7 @@ function fmtLink() {
         else if (e.key === 'Escape') { e.preventDefault(); cleanup(); }
     });
     // Don't apply on blur if user clicked away without typing
-    input.addEventListener('blur', () => { if (input.value.trim()) apply(); else cleanup(); });
+    input.addEventListener('blur', () => { if (ended) return; if (input.value.trim()) apply(); else cleanup(); });
 
     toolbar.appendChild(input);
     input.focus();
@@ -4464,9 +4923,17 @@ function onNoteTagsChange() {
     const note = data.notes.find(n => n.id === editingNoteId);
     if (!note) return;
     const raw = document.getElementById('noteTagsInput').value;
-    note.tags = raw.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean);
+    // Strip every leading # ("##idea" is "idea") and drop repeats, ignoring case, so
+    // "#Work, work" stores one tag. The first spelling wins.
+    const seen = new Set();
+    note.tags = raw.split(',').map(t => t.trim().replace(/^#+/, '').trim()).filter(t => {
+        const key = t.toLowerCase();
+        if (!t || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
     note.updatedAt = new Date().toISOString();
-    saveData();
+    scheduleNoteSave();
 }
 
 function renderNotes() {
@@ -4513,7 +4980,7 @@ function renderNotes() {
     // Global search hint: show matching tasks count
     if (search) {
         const taskMatches = data.todos.filter(t =>
-            (t.text || '').toLowerCase().includes(search) || (t.tags || []).some(tag => tag.includes(search))
+            (t.text || '').toLowerCase().includes(search) || (t.tags || []).some(tag => String(tag).toLowerCase().includes(search))
         ).length;
         if (taskMatches > 0) {
             const hint = document.createElement('div');
@@ -4603,7 +5070,7 @@ function showContextMenu(e, id) {
     const archEl = document.getElementById('ctxArchive');
     if (archEl) archEl.innerHTML = ic('archive', 'ic-lead') + ((todo && todo.archived) ? 'Unarchive' : 'Archive');
     sub.innerHTML = `<div class="context-menu-item ${!currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('')">No Group</div>` +
-        data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup('${g.replace(/'/g, "\\'")}')">${escapeHtml(g)}</div>`).join('');
+        data.groups.map(g => `<div class="context-menu-item ${g === currentGroup ? 'active' : ''}" onclick="ctxMoveToGroup(${jsArg(g)})">${escapeHtml(g)}</div>`).join('');
 
     // Populate section sub-menu (only if the task has a group with sections)
     const secSub = document.getElementById('ctxSectionMenu');
@@ -4614,7 +5081,7 @@ function showContextMenu(e, id) {
     if (groupSections.length > 0) {
         document.getElementById('ctxSectionSub').style.display = '';
         secSub.innerHTML = `<div class="context-menu-item ${!currentSection ? 'active' : ''}" onclick="ctxMoveToSection('')">No Section</div>` +
-            groupSections.map(s => `<div class="context-menu-item ${s === currentSection ? 'active' : ''}" onclick="ctxMoveToSection('${s.replace(/'/g, "\\'")}')">${escapeHtml(s)}</div>`).join('');
+            groupSections.map(s => `<div class="context-menu-item ${s === currentSection ? 'active' : ''}" onclick="ctxMoveToSection(${jsArg(s)})">${escapeHtml(s)}</div>`).join('');
     } else {
         // Hide section menu if the task's group has no sections
         document.getElementById('ctxSectionSub').style.display = 'none';
@@ -4652,13 +5119,25 @@ function ctxSetPriority(p) {
     hideContextMenu();
 }
 
+// Rename from the menu, so a task can be renamed from the keyboard as well as by double-clicking.
+function ctxRename() {
+    const id = contextTargetId;
+    hideContextMenu();   // returns focus to the ⋯ button first, so the editor can take it after
+    const textEl = document.querySelector(`#todoList .todo-item[data-id="${id}"] .todo-text`);
+    if (textEl) startEditTodo(id, textEl);
+}
+
 function ctxDuplicate() {
     const todo = data.todos.find(t => t.id === contextTargetId);
+    const keepFocus = jotFocusInTaskList();
     if (todo) {
-        const dup = { ...todo, id: Date.now().toString(36) + Math.random().toString(36).substr(2,5), completed: false, createdAt: new Date().toISOString() };
+        // Copy the task's lists too (a plain spread shared its subtasks and tags with the original,
+        // so ticking a subtask on the copy also ticked it on the original until Jot restarted).
+        const dup = { ...JSON.parse(JSON.stringify(todo)), id: Date.now().toString(36) + Math.random().toString(36).substr(2,5), completed: false, createdAt: new Date().toISOString() };
         delete dup.completedAt;
         data.todos.unshift(dup);
         saveData(); renderTodos();
+        if (keepFocus) focusTaskCheck([dup.id, todo.id]);   // before hideContextMenu, which then leaves focus here
     }
     hideContextMenu();
 }
@@ -4934,7 +5413,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-// Escape a string for safe use inside a single-quoted HTML attribute / JS string
+// Escape a string for use as an HTML attribute value (in single or double quotes)
 function escapeAttr(str) {
     return String(str == null ? '' : str)
         .replace(/&/g, '&amp;')
@@ -4944,10 +5423,31 @@ function escapeAttr(str) {
         .replace(/>/g, '&gt;');
 }
 
+// A string argument for an inline handler in a double-quoted attribute:
+// onclick="deleteGroup(${jsArg(name)})". The browser decodes the attribute before it runs the
+// script, so HTML escaping alone can't protect a JavaScript string there: a group called "Mom's"
+// produced deleteGroup('Mom's') and every button for it stopped working. JSON.stringify writes a
+// valid string literal, and escapeAttr keeps its quotes from ending the attribute.
+function jsArg(str) {
+    return escapeAttr(JSON.stringify(String(str == null ? '' : str)));
+}
+
 // In-app replacement for window.prompt (which Electron BrowserWindows block).
 // Returns a Promise resolving to the trimmed string, or null if cancelled.
 let _promptResolve = null;
+// Keep Tab and Shift+Tab inside a dialog box (put onkeydown="jotTrapTab(event, this)" on the box).
+function jotTrapTab(e, box) {
+    if (e.key !== 'Tab') return;
+    const items = [...box.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(el => !el.disabled);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+
+let promptOpener = null;   // where focus goes back to when the prompt closes
 function showPrompt(title, initial) {
+    if (!document.getElementById('promptModal').classList.contains('active')) promptOpener = document.activeElement;
     return new Promise((resolve) => {
         _promptResolve = resolve;
         const modal = document.getElementById('promptModal');
@@ -4965,9 +5465,63 @@ function confirmPrompt() {
 }
 function closePromptModal(result) {
     document.getElementById('promptModal').classList.remove('active');
+    const back = promptOpener;
+    promptOpener = null;
+    if (back && back.isConnected && typeof back.focus === 'function') back.focus();
     const r = _promptResolve;
     _promptResolve = null;
     if (r) r(result === undefined ? null : result);
+}
+
+// ===== KEYBOARD SHORTCUT LIST =====
+// Lists the shortcuts Jot's own code handles: the two global ones main.js registers, and the
+// keydown handlers in this file. Keep it in step with them. Ctrl+N checks ctrlKey only, so it's
+// Control on the Mac too; the others accept Cmd there.
+let shortcutsOpener = null;
+function openShortcuts() {
+    const modal = document.getElementById('shortcutsModal');
+    if (!modal || appState !== 'expanded') return;
+    const mac = /Mac/i.test(navigator.platform || navigator.userAgent || '');
+    const k = (macLabel, winLabel) => (mac ? macLabel : winLabel);
+    const groups = [
+        ['From any app', [
+            [k('⌘⇧J', 'Ctrl+Shift+J'), 'Add a task'],
+            [k('⌘⇧Space', 'Ctrl+Shift+Space'), 'Show Jot'],
+        ]],
+        ['In Jot', [
+            ['?', 'Show this list'],
+            ['Esc', 'Close what’s open, or shrink to the widget'],
+            [k('⌃N', 'Ctrl+N'), 'New note'],
+            [k('⌘-click', 'Ctrl+click'), 'Select a task'],
+            [k('⌘C', 'Ctrl+C'), 'Copy the selected tasks'],
+            ['Space', 'Tick the focused checkbox'],
+        ]],
+        ['Editing a task', [
+            ['Enter', 'Save'],
+            [k('⇧Enter', 'Shift+Enter'), 'New line'],
+            [k('⌘Enter', 'Ctrl+Enter'), 'New line that continues a numbered list'],
+            ['Esc', 'Cancel'],
+        ]],
+        ['In a note', [
+            [k('⌘F', 'Ctrl+F'), 'Find'],
+            [k('⌘⇧V', 'Ctrl+Shift+V'), 'Paste as plain text'],
+        ]],
+    ];
+    document.getElementById('shortcutList').innerHTML = groups.map(([title, rows]) =>
+        `<div class="shortcut-group">${escapeHtml(title)}</div>` +
+        rows.map(([keys, what]) => `<kbd>${escapeHtml(keys)}</kbd><span>${escapeHtml(what)}</span>`).join('')
+    ).join('');
+    if (!modal.classList.contains('active')) shortcutsOpener = document.activeElement;
+    modal.classList.add('active');
+    document.getElementById('shortcutsClose').focus();
+}
+function closeShortcuts() {
+    const modal = document.getElementById('shortcutsModal');
+    if (!modal || !modal.classList.contains('active')) return;
+    modal.classList.remove('active');
+    const back = shortcutsOpener;
+    shortcutsOpener = null;
+    if (back && back.isConnected && typeof back.focus === 'function') back.focus();
 }
 
 function formatTime(t) {
@@ -5073,10 +5627,24 @@ function hashStr(str) {
 
 // ===== KEYBOARD SHORTCUTS =====
 document.addEventListener('keydown', (e) => {
-    // Escape to collapse
-    if (e.key === 'Escape') {
-        if (editingNoteId) closeNoteEditor();
+    // Escape closes the innermost open thing, and collapses Jot only when nothing else is open.
+    // A control that handles Escape itself (an inline editor, the find box, the prompt) calls
+    // preventDefault, so Escape there closes only that control. Before this, Escape in a task
+    // editor also collapsed Jot, and Escape in a note's find box also closed the note.
+    if (e.key === 'Escape' && !e.defaultPrevented) {
+        if (document.getElementById('shortcutsModal').classList.contains('active')) closeShortcuts();
+        else if (document.getElementById('promptModal').classList.contains('active')) closePromptModal();
+        else if (document.getElementById('scheduleModal').classList.contains('active')) closeScheduleModal();
+        else if (editingNoteId) closeNoteEditor();
         else if (appState === 'expanded') collapseToWidget();
+    }
+    // ? opens (or closes) the keyboard shortcut list, in the main window and not while typing.
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.defaultPrevented && appState === 'expanded') {
+        const t = e.target;
+        const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+        const listOpen = document.getElementById('shortcutsModal').classList.contains('active');
+        if (!typing && listOpen) { e.preventDefault(); closeShortcuts(); }
+        else if (!typing && !document.querySelector('.modal-overlay.active')) { e.preventDefault(); openShortcuts(); }
     }
     // Ctrl+F to find within the open note
     if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && editingNoteId) {
@@ -5210,6 +5778,7 @@ function openSettings() {
     document.getElementById('settingsPanel').classList.add('active');
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelector('.settings-tab').classList.add('active');
+    syncTabAria();
     renderSettings();
 }
 
@@ -5420,6 +5989,7 @@ setInterval(refreshDateUI, 60 * 1000);
 
 // Safety net: persist data if the window is ever closed/reloaded
 window.addEventListener('beforeunload', () => {
+    try { flushNoteSave(); } catch (e) {}   // a note edit still waiting for typing to pause
     try { saveData(); } catch (e) {}
 });
 
@@ -5634,11 +6204,7 @@ if (window.widgetAPI) {
     }
     // Quick-add hotkey: expand, go to Tasks, focus the input
     if (window.widgetAPI.onQuickAdd) {
-        window.widgetAPI.onQuickAdd(() => {
-            expandApp();
-            switchTab('todos');
-            setTimeout(() => { const i = document.getElementById('todoInput'); if (i) i.focus(); }, 150);
-        });
+        window.widgetAPI.onQuickAdd(() => onGlobalQuickAdd());   // the widget's box when collapsed, else the task box
     }
     // Update status feedback
     if (window.widgetAPI.onUpdateStatus) {
@@ -5695,6 +6261,7 @@ if (window.widgetAPI) {
 
 // Swap to widget UI without asking main to resize (main already did it on blur)
 function collapseUIOnly() {
+    flushNoteSave();   // save a note edit still waiting for typing to pause
     document.body.classList.add('widget-mode');
     document.getElementById('app').style.display = 'none';
     document.getElementById('widget').style.display = 'flex';

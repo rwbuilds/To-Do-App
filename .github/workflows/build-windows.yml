@@ -18,12 +18,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22   # Electron 44 needs Node 22.12 or later
+          # This job can write releases, so keep dependency caching off (setup-node's advice
+          # for workflows with write access). It is already off while package.json has no
+          # packageManager field; this keeps it off if one is added.
+          package-manager-cache: false
 
       - name: Read app version
         id: ver
@@ -53,6 +57,9 @@ jobs:
       - name: Check version sync (package.json vs index.html APP_VERSION)
         run: npm run version:check
 
+      - name: Run tests
+        run: npm test
+
       - name: Build Windows installer
         run: npm run make
 
@@ -71,7 +78,7 @@ jobs:
 
       # Publish a version-tagged Release (so auto-update can detect new versions)
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           # Tag the commit this job built. Without this, a missing tag is created

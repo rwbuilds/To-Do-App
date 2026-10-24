@@ -43,10 +43,13 @@ function checkReminders() {
     // Respect an active snooze
     const snz = snoozeUntil.get(t.id);
     if (snz && Date.now() < snz) return;
-    const tm = (t.dueTime && /^\d{1,2}:\d{2}/.test(t.dueTime))
-      ? (t.dueTime.length === 5 ? t.dueTime + ':00' : t.dueTime)
-      : '09:00:00';
-    const due = new Date(t.dueDate + 'T' + tm);
+    // The due moment in local time: the due time on the due day, or 9 AM without a time. The old
+    // code built "<date>T9:00" for a one-digit hour, which isn't a valid date, so that reminder
+    // never fired.
+    const [y, mo, d] = String(t.dueDate).split('-').map(Number);
+    const hm = /^(\d{1,2}):(\d{2})/.exec(t.dueTime || '');
+    const due = hm ? new Date(y, mo - 1, d, +hm[1], +hm[2]) : new Date(y, mo - 1, d, 9, 0);
+    if (isNaN(due)) return;
     if (now >= due) {
       notifiedTaskIds.add(t.id);
       snoozeUntil.delete(t.id);
@@ -121,6 +124,8 @@ function launchedAtStartup() {
 // Window sizes for the two states
 const WIDGET_SIZE = { width: 56, height: 56 };
 const EXPANDED_SIZE = { width: 440, height: 700 };
+// The widget widened into a one-line task box (Cmd/Ctrl+Shift+J while Jot is collapsed)
+const QUICK_ADD_SIZE = { width: 340, height: 56 };
 const MIN_EXPANDED = { width: 320, height: 400 };
 
 // Remember the expanded window's size. Resizing fires many events per second (corner grip,
@@ -180,6 +185,30 @@ function createWindow() {
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: process.platform === 'darwin' });
 
   mainWindow.loadFile('index.html');
+
+  // Keep the window on Jot's own page. A link or file dropped on the window, or a page that tries to
+  // navigate or open a window, would otherwise replace Jot or open a bare Electron window. Web and
+  // email links go to the default browser or mail app instead; anything else is just refused.
+  const openOutside = (url) => {
+    try {
+      const u = new URL(String(url));
+      if (['http:', 'https:', 'mailto:'].includes(u.protocol)) require('electron').shell.openExternal(u.href);
+    } catch (e) { /* not a URL */ }
+  };
+  mainWindow.webContents.on('will-navigate', (event, legacyUrl) => {
+    const url = String((event && event.url) || legacyUrl || '');
+    const own = String(mainWindow.webContents.getURL() || '').split('#')[0];
+    if (own && url.split('#')[0] === own) return;   // Jot reloading its own page
+    event.preventDefault();
+    openOutside(url);
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => { openOutside(url); return { action: 'deny' }; });
+  // Refuse the camera, microphone, location, screen capture, devices and other apps, which Jot never
+  // uses. Other permissions keep Electron's default (allowed), since the page uses the clipboard.
+  const DENIED_PERMISSIONS = new Set(['media', 'geolocation', 'display-capture', 'midi', 'midiSysex', 'hid', 'serial',
+    'usb', 'bluetooth', 'pointerLock', 'keyboardLock', 'idle-detection', 'openExternal', 'window-management',
+    'speaker-selection', 'mediaKeySystem']);
+  mainWindow.webContents.session.setPermissionRequestHandler((wc, permission, callback) => callback(!DENIED_PERMISSIONS.has(permission)));
 
   // Ensure the spell checker has a language loaded so it returns suggestions.
   // Without an explicit language, words get flagged but dictionarySuggestions is empty.
@@ -444,6 +473,20 @@ ipcMain.on('resize-window', (event, state) => {
     // grow at the widget's spot (possibly past the screen edge) and then jump into place.
     mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: EXPANDED_SIZE.width, height: EXPANDED_SIZE.height });
 
+  } else if (state === 'quick-add') {
+    // Widen the widget into a one-line task box. 'widget' shrinks it back to widgetAnchor, so set
+    // that to where the widget is now (it's otherwise only set on expand, and the widget may have
+    // been dragged since). Grow rightward, or leftward when that would pass the screen's right edge.
+    if (isExpanded) return;
+    const [w0, h0] = mainWindow.getSize();
+    if (w0 === WIDGET_SIZE.width && h0 === WIDGET_SIZE.height) widgetAnchor = { x: curX, y: curY };
+    const a = widgetAnchor || { x: curX, y: curY };
+    let x = a.x;
+    if (x + QUICK_ADD_SIZE.width > workArea.x + workArea.width) x = a.x + WIDGET_SIZE.width - QUICK_ADD_SIZE.width;
+    x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - QUICK_ADD_SIZE.width, x));
+    const y = Math.max(workArea.y, Math.min(workArea.y + workArea.height - QUICK_ADD_SIZE.height, a.y));
+    mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: QUICK_ADD_SIZE.width, height: QUICK_ADD_SIZE.height });
+
   } else { // widget
     // Remember the expanded bounds so we can restore them next expand
     if (isExpanded) lastExpandedBounds = mainWindow.getBounds();
@@ -598,10 +641,14 @@ ipcMain.on('open-backups-folder', () => {
   require('electron').shell.openPath(dir);
 });
 
-// Open a hyperlink in the user's default browser
+// Open a web link in the default browser, or an email link in the mail app. Anything else
+// (file:, javascript:, other apps' schemes) is refused. Notes keep mailto: links, but this used
+// to accept only http(s), so clicking an email link in a note did nothing.
 ipcMain.on('open-external', (event, url) => {
-  if (url && /^https?:\/\//i.test(url)) {
-    require('electron').shell.openExternal(url);
+  let u;
+  try { u = new URL(String(url)); } catch (e) { return; }
+  if (['http:', 'https:', 'mailto:'].includes(u.protocol)) {
+    require('electron').shell.openExternal(u.href);
   }
 });
 

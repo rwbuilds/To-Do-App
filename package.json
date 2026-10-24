@@ -1,7 +1,7 @@
 {
   "name": "jot",
   "productName": "Jot",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "A draggable, always-on-top todo & notes widget",
   "main": "main.js",
   "author": "rushanwi",
@@ -15,6 +15,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "version:check": "node scripts/check-version-sync.js",
+    "test": "node tests/run.js",
     "release": "node scripts/release.js"
   },
   "dependencies": {
@@ -26,7 +27,8 @@
     "@electron-forge/maker-dmg": "^7.4.0",
     "@electron-forge/maker-squirrel": "^7.4.0",
     "@electron-forge/maker-zip": "^7.4.0",
-    "electron": "^44.7.0"
+    "electron": "^44.7.0",
+    "jsdom": "^25.0.1"
   },
   "config": {
     "forge": {

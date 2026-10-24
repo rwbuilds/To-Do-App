@@ -6,9 +6,10 @@
  * this. It refuses to run while tracked files have unstaged edits, so nothing
  * is silently left out of a release. Then it:
  *   1. checks the version is new and higher than the current one,
- *   2. bumps the version in package.json, index.html (APP_VERSION) and
- *      package-lock.json, keeping each file's formatting,
- *   3. validates version sync and main.js syntax,
+ *   2. checks main.js and preload.js syntax and version sync, and runs the tests, before it
+ *      changes anything,
+ *   3. bumps the version in package.json, index.html (APP_VERSION) and
+ *      package-lock.json, keeping each file's formatting, and puts the files back if that fails,
  *   4. commits the staged changes plus the version files and pushes to
  *      origin main, which triggers the GitHub Action that publishes the
  *      Windows release.
@@ -51,23 +52,46 @@ const isNewer = (a, b) => {
 };
 if (!isNewer(version, current)) fail(`v${version} is not higher than the current v${current}.`);
 
-// 3. Bump the version with a text replace so formatting is untouched.
-const bump = (file, re) => {
-  const p = path.join(root, file);
-  const before = fs.readFileSync(p, 'utf8');
-  const after = before.replace(re, `$1${version}$2`);
-  if (after === before) fail(`could not find the version string in ${file}`);
-  fs.writeFileSync(p, after);
+// 3. Check everything that can be checked before writing any file, so a failed check leaves the
+//    repo as it was. (This used to bump the files first, and a failed check left them changed.)
+const run = (what, cmd, args) => {
+  try { execFileSync(cmd, args, { cwd: root, stdio: 'inherit' }); }
+  catch (e) { fail(`${what} failed, so nothing was changed. Fix it, then run this again.`); }
 };
-bump('package.json', /("version"\s*:\s*")[^"]+(")/);
-bump('index.html', /(const\s+APP_VERSION\s*=\s*['"])[^'"]+(['"])/);
+run('the main.js syntax check', process.execPath, ['--check', path.join(root, 'main.js')]);
+run('the preload.js syntax check', process.execPath, ['--check', path.join(root, 'preload.js')]);
+run('the version check', process.execPath, [path.join(root, 'scripts', 'check-version-sync.js')]);
+console.log('\nRunning the tests...');
 // Fixed command string (no user input), run through the shell so npm.cmd works on Windows.
-execSync('npm install --package-lock-only --ignore-scripts --no-audit --no-fund', { cwd: root, stdio: 'pipe' });
-console.log(`Bumped v${current} -> v${version}`);
+try { execSync('npm test', { cwd: root, stdio: 'inherit' }); }
+catch (e) { fail('the tests failed, so nothing was changed. Fix them, then run this again.'); }
 
-// 4. Validate before committing anything.
-execFileSync(process.execPath, [path.join(root, 'scripts', 'check-version-sync.js')], { cwd: root, stdio: 'inherit' });
-execFileSync(process.execPath, ['--check', path.join(root, 'main.js')], { cwd: root, stdio: 'inherit' });
+// 4. Bump the version with a text replace so formatting is untouched. The new text is built and
+//    checked in memory first, and if a later step fails the files are put back.
+const files = ['package.json', 'index.html', 'package-lock.json'];
+const originals = {};
+for (const f of files) originals[f] = fs.readFileSync(path.join(root, f), 'utf8');
+const bumped = (file, re) => {
+  const after = originals[file].replace(re, `$1${version}$2`);
+  if (after === originals[file]) fail(`could not find the version string in ${file}`);
+  return after;
+};
+const nextPkg = bumped('package.json', /("version"\s*:\s*")[^"]+(")/);
+const nextHtml = bumped('index.html', /(const\s+APP_VERSION\s*=\s*['"])[^'"]+(['"])/);
+const htmlVersion = (nextHtml.match(/const\s+APP_VERSION\s*=\s*['"]([^'"]+)['"]/) || [])[1];
+if (JSON.parse(nextPkg).version !== version || htmlVersion !== version) {
+  fail('the new version would not be the same in package.json and index.html, so nothing was changed.');
+}
+try {
+  fs.writeFileSync(path.join(root, 'package.json'), nextPkg);
+  fs.writeFileSync(path.join(root, 'index.html'), nextHtml);
+  execSync('npm install --package-lock-only --ignore-scripts --no-audit --no-fund', { cwd: root, stdio: 'pipe' });
+  execFileSync(process.execPath, [path.join(root, 'scripts', 'check-version-sync.js')], { cwd: root, stdio: 'inherit' });
+} catch (e) {
+  for (const f of files) fs.writeFileSync(path.join(root, f), originals[f]);
+  fail('updating the version failed, so the files were put back as they were:\n  ' + String((e && e.message) || e).split('\n')[0]);
+}
+console.log(`Bumped v${current} -> v${version}`);
 
 // 5. Commit the staged changes plus the version files, then push.
 git(['add', 'package.json', 'index.html', 'package-lock.json']);
