@@ -11,7 +11,8 @@ const { check, done } = checker('main process');
 const UD = fs.mkdtempSync(path.join(os.tmpdir(), 'jot-test-userdata-'));
 process.on('exit', () => { try { fs.rmSync(UD, { recursive: true, force: true }); } catch (e) {} });
 
-const ipcOn = {}, opened = [], notifications = [];
+const ipcOn = {}, ipcHandle = {}, opened = [], notifications = [];
+let dialogResult = { canceled: true, filePaths: [] };
 const noop = () => {};
 const fakeWin = {
     on: noop, once: noop, loadFile: noop, setAlwaysOnTop: noop, setVisibleOnAllWorkspaces: noop, setPosition: noop,
@@ -34,7 +35,8 @@ const electron = {
     Tray: function () { return { setToolTip: noop, setContextMenu: noop, on: noop }; },
     Menu: Object.assign(function () { return { append: noop, popup: noop }; }, { buildFromTemplate: () => ({ append: noop, popup: noop }) }),
     MenuItem: function () {},
-    ipcMain: { on: (ch, cb) => { ipcOn[ch] = cb; }, handle: noop },
+    ipcMain: { on: (ch, cb) => { ipcOn[ch] = cb; }, handle: (ch, cb) => { ipcHandle[ch] = cb; } },
+    dialog: { showOpenDialog: async () => dialogResult },
     nativeImage: { createFromPath: () => ({ isEmpty: () => true, resize: () => ({}) }), createEmpty: () => ({}) },
     screen: {
         getPrimaryDisplay: () => ({ workAreaSize: { width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
@@ -99,4 +101,59 @@ check('an invalid backup is not written', backups().length === 0, JSON.stringify
 ipcOn['auto-backup'](null, JSON.stringify({ todos: [], notes: [] }));
 ipcOn['auto-backup'](null, JSON.stringify({ todos: [{ id: 'x' }], notes: [] }));
 check('one backup a day, named by the local date', backups().length === 1 && backups()[0] === `jot-autobackup-${day(0)}.json`, JSON.stringify(backups()));
-done();
+
+// Cloud backup folder: off by default, set only through the folder picker, and each folder keeps
+// its own once-a-day check and its own 7-file prune.
+(async () => {
+    if (!ipcHandle['get-cloud-backup']) { check('cloud backup handlers exist', false); return done(); }
+    const CLOUD = fs.mkdtempSync(path.join(os.tmpdir(), 'jot-test-cloud-'));
+    process.on('exit', () => { try { fs.rmSync(CLOUD, { recursive: true, force: true }); } catch (e) {} });
+    const cloudFiles = () => fs.readdirSync(CLOUD).sort();
+    const tag = require('os').hostname().split('.')[0].replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'computer';
+    const payload = JSON.stringify({ todos: [{ id: 'c1' }], notes: [] });
+
+    let st = await ipcHandle['get-cloud-backup']();
+    check('cloud backup is off by default', st.dir === null && st.available === false, JSON.stringify(st));
+
+    st = await ipcHandle['choose-cloud-backup-folder']();
+    check('cancelling the picker leaves it off', st.dir === null, JSON.stringify(st));
+
+    dialogResult = { canceled: false, filePaths: [CLOUD] };
+    st = await ipcHandle['choose-cloud-backup-folder']();
+    check('picking a folder turns it on', st.dir === CLOUD && st.available === true, JSON.stringify(st));
+    check('the folder is saved in jot-settings.json', JSON.parse(fs.readFileSync(path.join(UD, 'jot-settings.json'), 'utf8')).cloudBackupDir === CLOUD);
+
+    // Today's local backup already exists, but the cloud copy is still written (separate check per folder)
+    ipcOn['auto-backup'](null, payload);
+    const want = `jot-autobackup-${tag}-${day(0)}.json`;
+    check('cloud copy is written even when the local one already exists', cloudFiles().includes(want), JSON.stringify(cloudFiles()));
+    check('cloud copy holds the payload', fs.readFileSync(path.join(CLOUD, want), 'utf8') === payload);
+    check('the local folder still has one backup', backups().length === 1, JSON.stringify(backups()));
+    ipcOn['auto-backup'](null, JSON.stringify({ todos: [], notes: [] }));
+    check('cloud copy is written once a day', fs.readFileSync(path.join(CLOUD, want), 'utf8') === payload);
+    ipcOn['auto-backup'](null, 'not json');
+    check('an invalid payload never reaches the cloud folder', cloudFiles().length === 1, JSON.stringify(cloudFiles()));
+
+    // Prune keeps this machine's newest 7 and never touches the other machine's files or anything else
+    fs.unlinkSync(path.join(CLOUD, want));
+    for (let i = 1; i <= 9; i++) fs.writeFileSync(path.join(CLOUD, `jot-autobackup-${tag}-${day(-i)}.json`), '{}');
+    for (let i = 1; i <= 9; i++) fs.writeFileSync(path.join(CLOUD, `jot-autobackup-OtherPC-${day(-i)}.json`), '{}');
+    fs.writeFileSync(path.join(CLOUD, 'notes.txt'), 'keep me');
+    ipcOn['auto-backup'](null, payload);
+    const mine = cloudFiles().filter(f => f.startsWith(`jot-autobackup-${tag}-`));
+    check('cloud prune keeps this computer\'s newest 7', mine.length === 7 && mine.includes(want) && !mine.includes(`jot-autobackup-${tag}-${day(-9)}.json`), JSON.stringify(mine));
+    check('cloud prune leaves the other computer\'s backups alone', cloudFiles().filter(f => f.includes('-OtherPC-')).length === 9);
+    check('cloud prune leaves other files alone', cloudFiles().includes('notes.txt'));
+
+    // Drive offline: skipped, reported, and no folder is created at that path
+    const gone = path.join(CLOUD, 'missing-drive');
+    dialogResult = { canceled: false, filePaths: [gone] };
+    await ipcHandle['choose-cloud-backup-folder']();
+    ipcOn['auto-backup'](null, payload);
+    st = await ipcHandle['get-cloud-backup']();
+    check('a missing folder is reported, not created', st.available === false && !!st.error && !fs.existsSync(gone), JSON.stringify(st));
+
+    st = await ipcHandle['clear-cloud-backup-folder']();
+    check('turning it off clears the folder and the error', st.dir === null && st.error === null, JSON.stringify(st));
+    done();
+})().catch(e => { check('cloud backup checks ran', false, String(e && e.stack || e)); done(); });

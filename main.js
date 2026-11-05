@@ -597,41 +597,107 @@ ipcMain.handle('get-auto-launch', () => {
 
 // ===== DAILY AUTO-BACKUP =====
 // The renderer sends its data; we write at most one backup per day,
-// keeping the last 7 in <userData>/backups.
-ipcMain.on('auto-backup', (event, jsonString) => {
+// keeping the last 7 in <userData>/backups. If the user has picked a cloud backup folder,
+// the same backup is also written there so a dead or wiped disk doesn't take the backups with it.
+
+// Name the file by the local day. toISOString() gave the UTC day, so in Pacific time an
+// evening backup was named for the next day.
+function localDay() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// A shared cloud folder can hold backups from both the Mac and the PC, so cloud backups carry
+// the computer's name. Only letters, digits and dashes, so it's safe in a file name everywhere.
+function machineTag() {
+  const tag = String(require('os').hostname() || '').split('.')[0].replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  return tag || 'computer';
+}
+
+// Write one dated backup into dir unless today's already exists, then keep the newest 7 that
+// match `prefix`. Returns true if a file was written. Throws if the folder can't be written.
+function writeDailyBackup(dir, prefix, jsonString) {
+  const file = path.join(dir, `${prefix}${localDay()}.json`);
+  if (fs.existsSync(file)) return false;
+
+  // Atomic write: write to a temp file then rename (atomic on the same volume),
+  // so a crash mid-write can't leave a truncated backup.
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, jsonString);
+  fs.renameSync(tmp, file);
+
+  // Prune: keep the 7 most recent. Match the exact dated filename so stray .tmp files, other
+  // machines' backups and anything else in a shared folder never count toward (or get caught
+  // by) the prune.
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${esc}\\d{4}-\\d{2}-\\d{2}\\.json$`);
+  fs.readdirSync(dir).filter(f => re.test(f)).sort().reverse().slice(7).forEach(f => {
+    try { fs.unlinkSync(path.join(dir, f)); } catch (e) {}
+  });
+  return true;
+}
+
+// Cloud folder status, shown in Settings. lastError is kept in memory only.
+let cloudBackupError = null;
+function cloudBackupStatus() {
+  const dir = loadSettings().cloudBackupDir || null;
+  return { dir, available: !!dir && fs.existsSync(dir), error: cloudBackupError };
+}
+
+function runAutoBackup(jsonString) {
+  // Validate the payload is real JSON before persisting, so we never write a
+  // corrupt backup that the once-per-day guard would then refuse to replace.
+  try { JSON.parse(jsonString); } catch (e) { return; }
+
   try {
     const dir = path.join(app.getPath('userData'), 'backups');
     fs.mkdirSync(dir, { recursive: true });
-
-    // Name the file by the local day. toISOString() gave the UTC day, so in Pacific time an
-    // evening backup was named for the next day.
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const file = path.join(dir, `jot-autobackup-${today}.json`);
-
-    // Only write once per day
-    if (fs.existsSync(file)) return;
-
-    // Validate the payload is real JSON before persisting, so we never write a
-    // corrupt backup that the once-per-day guard would then refuse to replace.
-    try { JSON.parse(jsonString); } catch (e) { return; }
-
-    // Atomic write: write to a temp file then rename (atomic on the same volume),
-    // so a crash mid-write can't leave a truncated backup.
-    const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, jsonString);
-    fs.renameSync(tmp, file);
-
-    // Prune: keep the 7 most recent. Match the exact dated filename so stray
-    // .tmp files never count toward (or get caught by) the prune.
-    const files = fs.readdirSync(dir)
-      .filter(f => /^jot-autobackup-\d{4}-\d{2}-\d{2}\.json$/.test(f))
-      .sort()
-      .reverse();
-    files.slice(7).forEach(f => {
-      try { fs.unlinkSync(path.join(dir, f)); } catch (e) {}
-    });
+    writeDailyBackup(dir, 'jot-autobackup-', jsonString);
   } catch (e) { /* non-fatal */ }
+
+  // Cloud copy. The folder must already exist: if the drive isn't mounted or signed in we skip
+  // rather than create a stray local folder at that path. Each folder has its own once-a-day
+  // check, so the cloud copy still gets written later on a day the drive was offline.
+  const cloudDir = loadSettings().cloudBackupDir;
+  if (!cloudDir) { cloudBackupError = null; return; }
+  if (!fs.existsSync(cloudDir)) { cloudBackupError = 'Folder not found. Is the cloud drive signed in?'; return; }
+  try {
+    writeDailyBackup(cloudDir, `jot-autobackup-${machineTag()}-`, jsonString);
+    cloudBackupError = null;
+  } catch (e) {
+    cloudBackupError = 'Could not write to the folder.';
+  }
+}
+
+ipcMain.on('auto-backup', (event, jsonString) => runAutoBackup(jsonString));
+
+ipcMain.handle('get-cloud-backup', () => cloudBackupStatus());
+
+// The folder only ever comes from the native folder picker, never from a path the page sends.
+ipcMain.handle('choose-cloud-backup-folder', async () => {
+  const { dialog } = require('electron');
+  suppressCollapse = true;
+  try {
+    const opts = { title: 'Choose a cloud backup folder', properties: ['openDirectory', 'createDirectory'] };
+    const res = (mainWindow && !mainWindow.isDestroyed()) ? await dialog.showOpenDialog(mainWindow, opts) : await dialog.showOpenDialog(opts);
+    if (!res || res.canceled || !res.filePaths || !res.filePaths[0]) return cloudBackupStatus();
+    saveSettings({ cloudBackupDir: res.filePaths[0] });
+    cloudBackupError = null;
+    return cloudBackupStatus();
+  } finally {
+    setTimeout(() => { suppressCollapse = false; }, 500);
+  }
+});
+
+ipcMain.handle('clear-cloud-backup-folder', () => {
+  saveSettings({ cloudBackupDir: null });
+  cloudBackupError = null;
+  return cloudBackupStatus();
+});
+
+ipcMain.on('open-cloud-backup-folder', () => {
+  const dir = loadSettings().cloudBackupDir;
+  if (dir && fs.existsSync(dir)) require('electron').shell.openPath(dir);
 });
 
 // Let the renderer open the backups folder from the UI

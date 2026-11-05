@@ -1789,6 +1789,17 @@
                 <button class="filter-btn delete-selected-btn" onclick="resetAllData()"><svg class="ic ic-lead" aria-hidden="true"><use href="#i-rotate-ccw"/></svg>Reset to defaults</button>
             </div>
             <div class="sublabel" style="margin-top:8px;">Jot auto-saves a daily backup (keeps the last 7). Backups include all tasks, notes, groups, sections &amp; settings.</div>
+            <div class="settings-row" style="margin-top:10px;">
+                <div style="min-width:0;">
+                    <div class="label">Cloud backup folder</div>
+                    <div class="sublabel" id="cloudBackupText" style="overflow-wrap:anywhere;">Off. Pick a folder in OneDrive or iCloud Drive to keep a copy of each daily backup off this computer.</div>
+                </div>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                    <button class="filter-btn" id="cloudBackupOpenBtn" onclick="openCloudBackupFolder()" style="display:none;">Open</button>
+                    <button class="filter-btn" id="cloudBackupOffBtn" onclick="clearCloudBackupFolder()" style="display:none;">Turn off</button>
+                    <button class="filter-btn" id="cloudBackupChooseBtn" onclick="chooseCloudBackupFolder()">Choose</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -2027,6 +2038,52 @@ function openBackupsFolder() {
     if (window.widgetAPI && window.widgetAPI.openBackupsFolder) {
         window.widgetAPI.openBackupsFolder();
     }
+}
+
+// Settings > Data > Cloud backup folder. The main process owns the folder path (it only comes
+// from the native folder picker); the page just shows its status.
+function renderCloudBackup(status) {
+    const text = document.getElementById('cloudBackupText');
+    if (!text) return;
+    const dir = status && status.dir;
+    if (!dir) {
+        text.textContent = 'Off. Pick a folder in OneDrive or iCloud Drive to keep a copy of each daily backup off this computer.';
+    } else if (status.error) {
+        text.textContent = dir + ' (' + status.error + ')';
+    } else if (!status.available) {
+        text.textContent = dir + ' (Folder not found. Is the cloud drive signed in?)';
+    } else {
+        text.textContent = dir;
+    }
+    document.getElementById('cloudBackupOpenBtn').style.display = dir && status.available ? '' : 'none';
+    document.getElementById('cloudBackupOffBtn').style.display = dir ? '' : 'none';
+    document.getElementById('cloudBackupChooseBtn').textContent = dir ? 'Change' : 'Choose';
+}
+
+function refreshCloudBackup() {
+    if (!window.widgetAPI || !window.widgetAPI.getCloudBackup) return Promise.resolve();
+    return window.widgetAPI.getCloudBackup().then(renderCloudBackup).catch(() => {});
+}
+
+function chooseCloudBackupFolder() {
+    if (!window.widgetAPI || !window.widgetAPI.chooseCloudBackupFolder) return;
+    return window.widgetAPI.chooseCloudBackupFolder().then(status => {
+        // Write today's copy straight away so the user can see it land in the folder.
+        if (status && status.dir) {
+            try { window.widgetAPI.autoBackup(JSON.stringify({ ...data, _app: 'Jot', _v: 1, _auto: true })); } catch (e) {}
+            return refreshCloudBackup();
+        }
+        renderCloudBackup(status);
+    }).catch(() => {});
+}
+
+function clearCloudBackupFolder() {
+    if (!window.widgetAPI || !window.widgetAPI.clearCloudBackupFolder) return;
+    return window.widgetAPI.clearCloudBackupFolder().then(renderCloudBackup).catch(() => {});
+}
+
+function openCloudBackupFolder() {
+    if (window.widgetAPI && window.widgetAPI.openCloudBackupFolder) window.widgetAPI.openCloudBackupFolder();
 }
 function checkForUpdatesNow() {
     const btn = document.getElementById('checkUpdatesBtn');
@@ -5803,6 +5860,8 @@ function renderSettings() {
             document.getElementById('startupToggle').classList.toggle('on', enabled);
         });
     }
+
+    refreshCloudBackup();
 
     // Reminders toggle
     document.getElementById('remindersToggle').classList.toggle('on', !!(data.settings && data.settings.reminders));
