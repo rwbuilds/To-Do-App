@@ -1,4 +1,4 @@
-name: Build Windows App
+name: Build and release (Windows + Mac)
 
 on:
   push:
@@ -9,12 +9,15 @@ on:
       - 'docs/**'
   workflow_dispatch:
 
+# The build jobs only read the repo. Only the publish job can write releases.
 permissions:
-  contents: write   # required to create/update Releases
+  contents: read
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -24,9 +27,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22   # Electron 44 needs Node 22.12 or later
-          # This job can write releases, so keep dependency caching off (setup-node's advice
-          # for workflows with write access). It is already off while package.json has no
-          # packageManager field; this keeps it off if one is added.
+          # Release workflows keep dependency caching off (setup-node's advice for workflows
+          # with write access). It is already off while package.json has no packageManager
+          # field; this keeps it off if one is added.
           package-manager-cache: false
 
       - name: Read app version
@@ -49,7 +52,7 @@ jobs:
             Write-Error "Tag $tag already exists. Bump 'version' in package.json (and APP_VERSION in index.html) before pushing."
             exit 1
           }
-          Write-Host "No existing release for $tag — proceeding."
+          Write-Host "No existing release for $tag, proceeding."
 
       - name: Install dependencies
         run: npm ci
@@ -63,7 +66,7 @@ jobs:
       - name: Build Windows installer
         run: npm run make
 
-      # Collect the built .exe(s) for the release
+      # Collect the installer plus RELEASES and .nupkg, which the Windows auto-updater reads
       - name: Gather installer
         shell: pwsh
         run: |
@@ -71,20 +74,82 @@ jobs:
           Get-ChildItem -Path out/make -Recurse -Filter *.exe | ForEach-Object {
             Copy-Item $_.FullName -Destination release/
           }
-          # electron-updater/update-electron-app also expects RELEASES + .nupkg for Squirrel feeds
           Get-ChildItem -Path out/make -Recurse -Include *.nupkg,RELEASES | ForEach-Object {
             Copy-Item $_.FullName -Destination release/
           }
 
-      # Publish a version-tagged Release (so auto-update can detect new versions)
+      - name: Upload Windows files
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: release/*
+          if-no-files-found: error
+
+  build-mac:
+    runs-on: macos-latest   # Apple Silicon runner, so this builds for arm64 Macs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Mac app
+        run: npm run make
+
+      # The DMG maker names the file Jot.dmg; give it the version and chip type so downloads
+      # from different releases don't look identical.
+      - name: Gather DMG
+        run: |
+          set -e
+          v=$(node -p "require('./package.json').version")
+          mkdir -p release
+          cp out/make/Jot.dmg "release/Jot-$v-mac-arm64.dmg"
+          ls -l release
+
+      - name: Upload Mac files
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac
+          path: release/*
+          if-no-files-found: error
+
+  # Publish only after both builds pass, so a release never goes out with one platform missing.
+  publish:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create the Release
+
+    steps:
+      - name: Download build files
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -l release
+
       - name: Publish Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          # Tag the commit this job built. Without this, a missing tag is created
+          tag_name: v${{ needs.build-windows.outputs.version }}
+          # Tag the commit this run built. Without this, a missing tag is created
           # at the branch HEAD when the release is published, which is wrong if
           # another push landed during the build (v1.6.1 was tagged on v1.6.2's commit).
           target_commitish: ${{ github.sha }}
-          name: Jot v${{ steps.ver.outputs.version }}
+          name: Jot v${{ needs.build-windows.outputs.version }}
+          body: |
+            Windows: download JotSetup.exe and run it. If SmartScreen warns you, click More info, then Run anyway. Jot updates itself after that.
+
+            Mac (Apple Silicon): download the .dmg, open it and drag Jot into Applications. The first time you open Jot, macOS will block it because it isn't signed with an Apple Developer ID. Go to System Settings > Privacy & Security, scroll down and click Open Anyway. Mac updates are manual: download the new .dmg and replace the app.
           files: release/*
           fail_on_unmatched_files: true

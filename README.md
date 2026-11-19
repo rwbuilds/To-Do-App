@@ -41,8 +41,9 @@ Double-click that `.exe` to install. The app then runs from the Start Menu and l
 Don't want to install Node or build locally? Let GitHub build the `.exe` for you.
 
 The repo already includes `.github/workflows/build-windows.yml`. On every push to
-`main` (or `master`), it builds the installer on a Windows runner and publishes a
-version-tagged **GitHub Release**.
+`main` (or `master`), it builds the Windows installer on a Windows runner and the Mac
+DMG on a Mac runner, then publishes both in one version-tagged **GitHub Release**. If
+either build fails, nothing is published.
 
 > **The repo must be public.** Auto-update relies on the free
 > [update.electronjs.org](https://update.electronjs.org) service, which cannot read
@@ -61,16 +62,19 @@ To ship a build:
 3. GitHub runs the workflow on a Windows machine. When it finishes, a new Release
    titled **`Jot vX.Y.Z`** (tag `vX.Y.Z`) appears under the repo's **Releases** section.
 
-You can also trigger a build manually: **Actions** tab → *Build Windows App* →
+You can also trigger a build manually: **Actions** tab → *Build and release (Windows + Mac)* →
 **Run workflow**.
 
-Each Release contains the Squirrel distribution files:
-- **`JotSetup.exe`** — the Windows installer
-- **`*.nupkg`** and **`RELEASES`** — the Squirrel update feed that `update-electron-app`
-  reads to detect and apply new versions
+Each Release contains:
+- **`JotSetup.exe`**: the Windows installer
+- **`*.nupkg`** and **`RELEASES`**: the Squirrel update feed that `update-electron-app`
+  reads to detect and apply new versions on Windows
+- **`Jot-X.Y.Z-mac-arm64.dmg`**: the Mac app for Apple Silicon Macs
 
-Installed clients auto-update from the latest Release; new users download
-`JotSetup.exe` from the newest Release.
+Installed Windows clients auto-update from the latest Release. The Mac app doesn't
+auto-update, because macOS updates need an app signed with an Apple Developer ID. Mac
+users download the new DMG and replace the app. The first time a Mac user opens Jot,
+macOS blocks it; they allow it under System Settings > Privacy & Security > Open Anyway.
 
 ## Optional: custom icon
 Drop a 256×256 PNG named `icon.png` in this folder before building to set the app + tray icon. Without it, a blank tray icon is used.
