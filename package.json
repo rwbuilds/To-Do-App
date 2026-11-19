@@ -1,7 +1,7 @@
 {
   "name": "jot",
   "productName": "Jot",
-  "version": "1.6.5",
+  "version": "1.6.6",
   "description": "A draggable, always-on-top todo & notes widget",
   "main": "main.js",
   "author": "rushanwi",
