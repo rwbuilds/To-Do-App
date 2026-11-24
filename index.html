@@ -152,6 +152,14 @@
         }
         .shortcut-list span { font-size: 12px; color: var(--text); }
         .shortcut-note { font-size: 11px; color: var(--text-dim); }
+        .sync-conflicts-box { width: 360px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); overflow-y: auto; }
+        .sync-conflicts-box .sublabel { font-size: 11px; color: var(--text-dim); }
+        .sync-conflict-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+        .sync-conflict { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+        .sync-conflict-title { font-size: 13px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; margin-bottom: 2px; }
+        .sync-conflict-other { font-size: 12px; color: var(--text); margin-top: 4px; overflow-wrap: anywhere; }
+        .sync-conflict-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .sync-conflict-empty { font-size: 12px; color: var(--text-dim); }
 
         /* Note folders & tags */
         .note-folder-bar {
@@ -240,6 +248,8 @@
         body.widget-mode #updateBanner,
         body.widget-mode #saveErrorBanner,
         body.widget-mode #shortcutsModal,
+        body.widget-mode #syncConflictsModal,
+        body.widget-mode #syncConflictBanner,
         body.widget-mode #taskbar-btn { display: none !important; }
         body.electron .content { max-height: none; flex: 1; min-height: 0; }
         /* Tab panels fill the window so content scrolls and the add bar stays pinned */
@@ -1805,6 +1815,23 @@
                     <button class="filter-btn" id="cloudBackupChooseBtn" onclick="chooseCloudBackupFolder()">Choose</button>
                 </div>
             </div>
+            <div class="settings-row" style="margin-top:10px; flex-wrap:wrap; gap:8px;">
+                <div style="min-width:0; flex:1 1 220px;">
+                    <div class="label">Sync between computers</div>
+                    <div class="sublabel" id="syncStatusText" style="overflow-wrap:anywhere;">Off.</div>
+                </div>
+                <div id="syncOffControls" style="display:flex; gap:6px; flex-shrink:0; align-items:center;">
+                    <select id="syncDriveSelect" class="filter-btn" aria-label="Cloud drive to sync through"><option value="other">Other folder…</option></select>
+                    <button class="filter-btn" id="syncStartBtn" onclick="startSync()">Start syncing</button>
+                </div>
+                <div id="syncOnControls" style="display:none; gap:6px; flex-shrink:0; flex-wrap:wrap;">
+                    <button class="filter-btn" id="syncReviewBtn" onclick="openSyncConflicts()" style="display:none;">Review conflicts</button>
+                    <button class="filter-btn" id="syncNowBtn" onclick="syncNow()">Sync now</button>
+                    <button class="filter-btn" id="syncOpenBtn" onclick="openSyncFolder()">Open</button>
+                    <button class="filter-btn" id="syncStopBtn" onclick="stopSync()">Stop syncing</button>
+                </div>
+            </div>
+            <div class="sublabel" style="margin-top:4px;">Pick the same cloud drive on each computer. Jot keeps its files in a "Jot Sync" folder there. If your tasks or notes include work information, use a drive your company allows for it.</div>
         </div>
     </div>
 </div>
@@ -1830,6 +1857,14 @@
     <button class="update-banner-action" onclick="exportData()">Export backup</button>
     <button class="update-banner-secondary" onclick="saveData()">Try again</button>
     <button class="update-banner-close" onclick="document.getElementById('saveErrorBanner').classList.remove('show')" title="Hide until the next failed save" aria-label="Hide"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+</div>
+
+<!-- Sync conflicts: shown after a sync found an item changed on both computers -->
+<div class="update-banner" id="syncConflictBanner" role="status">
+    <span class="update-banner-icon"><svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg></span>
+    <span class="update-banner-text" id="syncConflictText">Sync found changes made on both computers.</span>
+    <button class="update-banner-action" onclick="document.getElementById('syncConflictBanner').classList.remove('show'); openSyncConflicts()">Review</button>
+    <button class="update-banner-close" onclick="document.getElementById('syncConflictBanner').classList.remove('show')" title="Hide" aria-label="Hide"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
 </div>
 
 <!-- Context Menu -->
@@ -1899,6 +1934,19 @@
     </div>
 </div>
 
+<!-- Sync conflicts review (openSyncConflicts) -->
+<div class="modal-overlay" id="syncConflictsModal" onclick="if(event.target===this)closeSyncConflicts()">
+    <div class="modal-box sync-conflicts-box" role="dialog" aria-modal="true" aria-labelledby="syncConflictsTitle">
+        <div class="modal-title" id="syncConflictsTitle">Changed on both computers</div>
+        <div class="sublabel">Jot kept the newer version of each. Use the other version if it's the one you wanted.</div>
+        <div class="sync-conflict-list" id="syncConflictList"></div>
+        <div class="modal-actions">
+            <span style="flex:1;"></span>
+            <button class="add-btn" id="syncConflictsClose" onclick="closeSyncConflicts()">Close</button>
+        </div>
+    </div>
+</div>
+
 <!-- Keyboard shortcut list: press ? when not typing, or Settings > Keyboard shortcuts (openShortcuts) -->
 <div class="modal-overlay" id="shortcutsModal" onclick="if(event.target===this)closeShortcuts()">
     <div class="modal-box shortcuts-box" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle"
@@ -1918,7 +1966,16 @@
 const STORAGE_KEY = 'quicknotes_data';
 const APP_VERSION = '1.6.6';   // keep in sync with package.json
 
+// Sync state. Declared before loadData() runs so nothing at startup can reach it uninitialised.
+const SYNC_FORMAT = 1;                // the sync file format this build reads and writes
+const SYNC_DELETED_KEEP_DAYS = 90;    // a deletion older than this is forgotten
+const SYNC_CONFLICTS_KEEP = 50;
+let trackBase = null;                 // what the data looked like at the last save (trackChanges)
+let syncInfo = { enabled: false, deviceId: '', deviceName: '' };   // from the main process
+let syncWriteTimer = null;
+
 let data = loadData();
+trackBase = snapshotForTracking(data);
 let currentFilter = 'all';
 let currentSort = 'manual';   // manual | due | priority | created | alpha
 let currentTab = 'todos';
@@ -1998,7 +2055,637 @@ function migrateData(d) {
     });
     // Note folders list
     if (!Array.isArray(d.noteFolders)) d.noteFolders = [];
+    // Group, section and folder names. Sync merges them by name and uses them as object keys, so
+    // keep only real names, once each.
+    d.groups = [...new Set(d.groups.filter(isSyncName))];
+    d.noteFolders = [...new Set(d.noteFolders.filter(isSyncName))];
+    const sections = {};
+    for (const g of Object.keys(d.sections)) {
+        if (isSyncName(g) && Array.isArray(d.sections[g])) sections[g] = [...new Set(d.sections[g].filter(isSyncName))];
+    }
+    d.sections = sections;
+    // When each task and note last changed (sync needs it; tasks didn't record it before 1.7)
+    for (const r of d.todos.concat(d.notes)) {
+        if (r.updatedAt != null && !syncTime(r.updatedAt)) delete r.updatedAt;
+    }
+    migrateSync(d);
     return d;
+}
+
+// ===== SYNC: DATA THAT SYNC NEEDS =====
+// A group, section or note folder name. Sync uses names as object keys, so the names that would
+// reach Object.prototype are refused.
+function isSyncName(n) {
+    return typeof n === 'string' && n.length > 0 && n.length <= 200 && !['__proto__', 'constructor', 'prototype'].includes(n);
+}
+// Sections are stored as { group: [section, ...] }; sync tracks each one as "group<US>section".
+function isSectionKey(k) {
+    const p = typeof k === 'string' ? k.split('\u001f') : [];
+    return p.length === 2 && isSyncName(p[0]) && isSyncName(p[1]);
+}
+// A valid time as an ISO string, or null
+function syncTime(v) {
+    if (typeof v !== 'string' && typeof v !== 'number') return null;
+    const t = typeof v === 'number' ? v : Date.parse(v);
+    return isNaN(t) || !isFinite(t) ? null : new Date(t).toISOString();
+}
+function cleanTimeMap(m, keyOk) {
+    const out = {};
+    if (m && typeof m === 'object' && !Array.isArray(m)) {
+        for (const k of Object.keys(m)) { const t = syncTime(m[k]); if (t && keyOk(k)) out[k] = t; }
+    }
+    return out;
+}
+function plainObj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
+
+// d._sync holds what sync needs besides the records: when each thing was deleted, when each name
+// was added, when the order last changed, what each other computer last sent (seen), and the
+// conflicts waiting for the user. It is rebuilt from scratch here, so a hand-edited or hostile
+// file can't put anything else in it.
+function migrateSync(d) {
+    const s = plainObj(d._sync), del = plainObj(s.deleted), add = plainObj(s.addedAt), ord = plainObj(s.orderAt);
+    const out = {
+        deleted: {
+            todos: cleanTimeMap(del.todos, isSavedId), notes: cleanTimeMap(del.notes, isSavedId),
+            groups: cleanTimeMap(del.groups, isSyncName), noteFolders: cleanTimeMap(del.noteFolders, isSyncName),
+            sections: cleanTimeMap(del.sections, isSectionKey),
+        },
+        addedAt: {
+            groups: cleanTimeMap(add.groups, isSyncName), noteFolders: cleanTimeMap(add.noteFolders, isSyncName),
+            sections: cleanTimeMap(add.sections, isSectionKey),
+        },
+        orderAt: { todos: syncTime(ord.todos), notes: syncTime(ord.notes) },
+        seen: {},
+        conflicts: [],
+    };
+    const seen = plainObj(s.seen);
+    for (const dev of Object.keys(seen)) {
+        if (!isSavedId(dev)) continue;
+        out.seen[dev] = { todos: cleanTimeMap(plainObj(seen[dev]).todos, isSavedId), notes: cleanTimeMap(plainObj(seen[dev]).notes, isSavedId) };
+    }
+    if (Array.isArray(s.conflicts)) {
+        for (const c of s.conflicts) {
+            if (!c || !['todos', 'notes'].includes(c.list) || !isSavedId(c.id) || !syncTime(c.at)) continue;
+            if (!c.other || typeof c.other !== 'object' || Array.isArray(c.other)) continue;
+            // The other version goes through the same checks as any loaded record
+            const other = migrateData({ [c.list]: [c.other] })[c.list][0];
+            other.id = c.id;
+            out.conflicts.push({
+                list: c.list, id: c.id, at: syncTime(c.at), deleted: c.deleted === true,
+                kept: String(c.kept || '').slice(0, 80), otherFrom: String(c.otherFrom || '').slice(0, 80), other,
+            });
+            if (out.conflicts.length >= SYNC_CONFLICTS_KEEP) break;
+        }
+    }
+    d._sync = out;
+}
+
+// ===== SYNC: CHANGE TRACKING =====
+// saveData compares the data with what it saved last time. A task or note that's new or different
+// gets updatedAt = now, one that's gone is recorded in _sync.deleted, and a new or removed group,
+// section or folder name is recorded the same way. Stamping here covers every edit path, including
+// ones added later. Undo puts the item back, which counts as a change, so it's newer than its own
+// deletion and wins at the next sync.
+function recordKey(r) {
+    const c = Object.assign({}, r);
+    delete c.updatedAt;
+    return JSON.stringify(c);
+}
+function recordTime(r) {
+    return (r && (Date.parse(r.updatedAt) || Date.parse(r.createdAt))) || 0;
+}
+function syncNames(d, kind) {
+    if (kind !== 'sections') return (d[kind] || []).slice();
+    const out = [];
+    for (const g of Object.keys(d.sections || {})) for (const s of d.sections[g] || []) out.push(g + '\u001f' + s);
+    return out;
+}
+function snapshotForTracking(d) {
+    const snap = { order: {}, names: {} };
+    for (const list of ['todos', 'notes']) {
+        snap[list] = new Map(d[list].map(r => [r.id, recordKey(r)]));
+        snap.order[list] = d[list].map(r => r.id);
+    }
+    for (const kind of ['groups', 'noteFolders', 'sections']) snap.names[kind] = new Set(syncNames(d, kind));
+    return snap;
+}
+// Start comparing from the data as it is now, without recording anything (after a merge, restore
+// or reset, none of which are edits made on this computer).
+function resetTracking() {
+    trackBase = snapshotForTracking(data);
+}
+// The relative order of the items both versions have
+function orderChanged(before, after) {
+    const inBoth = new Set(before.filter(id => after.includes(id)));
+    const a = before.filter(id => inBoth.has(id)), b = after.filter(id => inBoth.has(id));
+    return a.some((id, i) => id !== b[i]);
+}
+// Returns true if anything sync cares about changed since the last save.
+function trackChanges() {
+    if (!trackBase) { resetTracking(); return false; }
+    const s = data._sync, now = new Date().toISOString();
+    let changed = false;
+    for (const list of ['todos', 'notes']) {
+        const base = trackBase[list], present = new Set();
+        for (const r of data[list]) {
+            present.add(r.id);
+            if (base.get(r.id) !== recordKey(r)) {
+                r.updatedAt = now;
+                delete s.deleted[list][r.id];
+                changed = true;
+            }
+        }
+        for (const id of base.keys()) {
+            if (!present.has(id)) { s.deleted[list][id] = now; changed = true; }
+        }
+        if (orderChanged(trackBase.order[list], data[list].map(r => r.id))) { s.orderAt[list] = now; changed = true; }
+    }
+    for (const kind of ['groups', 'noteFolders', 'sections']) {
+        const before = trackBase.names[kind], after = new Set(syncNames(data, kind));
+        for (const n of after) if (!before.has(n)) { s.addedAt[kind][n] = now; delete s.deleted[kind][n]; changed = true; }
+        for (const n of before) if (!after.has(n)) { s.deleted[kind][n] = now; delete s.addedAt[kind][n]; changed = true; }
+    }
+    pruneDeleted(s, Date.now());
+    resetTracking();
+    return changed;
+}
+function pruneDeleted(s, nowMs) {
+    const cutoff = nowMs - SYNC_DELETED_KEEP_DAYS * 86400000;
+    for (const kind of Object.keys(s.deleted)) {
+        for (const k of Object.keys(s.deleted[kind])) if (Date.parse(s.deleted[kind][k]) < cutoff) delete s.deleted[kind][k];
+    }
+}
+
+// Restore and Reset replace everything, but they aren't edits: they mustn't tell the other
+// computer that everything missing from the backup was deleted. Keep this computer's sync record,
+// forget deletions of anything the new data brings back, and start tracking from here.
+function replaceAllData(next) {
+    const keep = data && data._sync;
+    data = next;
+    if (keep) {
+        for (const list of ['todos', 'notes']) for (const r of data[list]) delete keep.deleted[list][r.id];
+        keep.conflicts = [];
+        data._sync = keep;
+    }
+    resetTracking();
+}
+
+// ===== SYNC: MERGE =====
+// Merge another computer's data into this one's. Pure: reads no files and changes neither input.
+// opts: { localId, localName, remoteId, remoteName, now, lockedNoteId }
+// Returns { data, changed, conflicts }.
+//
+// Tasks and notes: the newer version wins (the device ID breaks a tie). When both computers changed
+// the same item since they last synced, the newer one still wins, and the other version is kept in
+// _sync.conflicts for the user to look at. Something that's missing on one side is only removed by
+// a deletion record newer than its last change, so an empty, cut-off or old file can add things but
+// never remove them. A note that's open in the editor is left alone until it's closed.
+function mergeSync(localIn, remoteIn, opts) {
+    const clone = v => JSON.parse(JSON.stringify(v));
+    const L = clone(localIn), R = remoteIn;
+    const ls = L._sync, rs = R._sync;
+    const now = opts.now || new Date().toISOString();
+    const nowMs = Date.parse(now);
+    const tieLocalWins = String(opts.localId || '') >= String(opts.remoteId || '');
+    const prevSeen = ls.seen[opts.remoteId] || { todos: {}, notes: {} };
+    const seen = { todos: {}, notes: {} };
+    const conflicts = [];
+    let changed = false;
+    const t = v => (v ? Date.parse(v) : 0);
+
+    for (const list of ['todos', 'notes']) {
+        const lMap = new Map(L[list].map(r => [r.id, r]));
+        const rMap = new Map(R[list].map(r => [r.id, r]));
+        const keep = new Map();
+        for (const [id, l] of lMap) {
+            const r = rMap.get(id);
+            const base = prevSeen[list][id] ? t(prevSeen[list][id]) : null;
+            if (list === 'notes' && id === opts.lockedNoteId) {
+                // Open in the editor: keep it as it is and merge it next time
+                keep.set(id, l);
+                if (prevSeen[list][id]) seen[list][id] = prevSeen[list][id];
+                continue;
+            }
+            if (!r) {
+                const dt = rs.deleted[list][id];
+                if (dt && t(dt) > recordTime(l)) {
+                    // Deleted on the other computer after its last change here
+                    if (base != null && recordTime(l) > base) {
+                        conflicts.push({ list, id, at: now, deleted: true, kept: opts.remoteName, otherFrom: opts.localName, other: clone(l) });
+                    }
+                    if (!ls.deleted[list][id] || t(ls.deleted[list][id]) < t(dt)) ls.deleted[list][id] = dt;
+                    changed = true;
+                    continue;
+                }
+                keep.set(id, l);
+                continue;
+            }
+            seen[list][id] = syncTime(recordTime(r)) || now;
+            if (recordKey(l) === recordKey(r)) { keep.set(id, l); continue; }
+            const lt = recordTime(l), rt = recordTime(r);
+            const remoteWins = rt > lt || (rt === lt && !tieLocalWins);
+            // Both changed since the last sync. Before the first sync there's nothing to compare
+            // with, so only notes (which can hold a lot of writing) are flagged then.
+            const both = base == null ? list === 'notes' : (lt > base && rt > base);
+            if (both) {
+                conflicts.push({
+                    list, id, at: now, deleted: false,
+                    kept: remoteWins ? opts.remoteName : opts.localName,
+                    otherFrom: remoteWins ? opts.localName : opts.remoteName,
+                    other: clone(remoteWins ? l : r),
+                });
+            }
+            if (remoteWins) { keep.set(id, clone(r)); changed = true; } else keep.set(id, l);
+        }
+        for (const [id, r] of rMap) {
+            if (lMap.has(id)) continue;
+            seen[list][id] = syncTime(recordTime(r)) || now;
+            const dt = ls.deleted[list][id];
+            if (dt && t(dt) >= recordTime(r)) continue;   // deleted here after its last change there
+            delete ls.deleted[list][id];                  // changed there after it was deleted here
+            keep.set(id, clone(r));
+            changed = true;
+        }
+        // Order: whichever computer reordered last wins; what only the other side has goes on top
+        const remoteOrder = t(rs.orderAt[list]) > t(ls.orderAt[list]);
+        const first = (remoteOrder ? R : L)[list].map(r => r.id).filter(id => keep.has(id));
+        const inFirst = new Set(first);
+        const rest = (remoteOrder ? L : R)[list].map(r => r.id).filter(id => keep.has(id) && !inFirst.has(id));
+        const ids = rest.concat(first);
+        if (ids.join(',') !== L[list].map(r => r.id).join(',')) changed = true;
+        L[list] = ids.map(id => keep.get(id));
+        if (remoteOrder) ls.orderAt[list] = rs.orderAt[list];
+    }
+
+    // Deletions spread: take the later time for each
+    for (const kind of Object.keys(ls.deleted)) {
+        for (const [k, v] of Object.entries(rs.deleted[kind] || {})) {
+            if (!ls.deleted[kind][k] || t(ls.deleted[kind][k]) < t(v)) ls.deleted[kind][k] = v;
+        }
+    }
+
+    // Groups, sections and note folders merge by name. A name goes only when the other side deleted
+    // it after it was added here, and comes in unless it was deleted here after it was added there.
+    const mergeNames = (kind, localNames, remoteNames) => {
+        const rset = new Set(remoteNames), lset = new Set(localNames);
+        const out = localNames.filter(n => {
+            if (rset.has(n)) return true;
+            const dt = rs.deleted[kind][n];
+            if (dt && t(dt) > t(ls.addedAt[kind][n])) { changed = true; return false; }
+            return true;
+        });
+        for (const n of remoteNames) {
+            if (lset.has(n)) continue;
+            const dt = ls.deleted[kind][n];
+            if (dt && t(dt) >= t(rs.addedAt[kind][n])) continue;
+            out.push(n);
+            if (!ls.addedAt[kind][n] || t(ls.addedAt[kind][n]) < t(rs.addedAt[kind][n])) ls.addedAt[kind][n] = rs.addedAt[kind][n] || now;
+            changed = true;
+        }
+        return out;
+    };
+    L.groups = mergeNames('groups', L.groups, R.groups);
+    L.noteFolders = mergeNames('noteFolders', L.noteFolders, R.noteFolders);
+    const keys = mergeNames('sections', syncNames(L, 'sections'), syncNames(R, 'sections'));
+    const sections = {};
+    for (const k of keys) { const [g, s] = k.split('\u001f'); (sections[g] = sections[g] || []).push(s); }
+
+    // Nothing may point at a group, section or folder that's gone, or it would vanish from view.
+    // Put the name back (an item edited after its group was deleted on the other computer).
+    const addBack = (kind, name, list) => {
+        if (!list.includes(name)) { list.push(name); ls.addedAt[kind][name] = now; delete ls.deleted[kind][name]; changed = true; }
+    };
+    for (const task of L.todos) {
+        if (task.group && isSyncName(task.group)) {
+            addBack('groups', task.group, L.groups);
+            if (task.section && isSyncName(task.section)) {
+                sections[task.group] = sections[task.group] || [];
+                if (!sections[task.group].includes(task.section)) {
+                    sections[task.group].push(task.section);
+                    const k = task.group + '\u001f' + task.section;
+                    ls.addedAt.sections[k] = now; delete ls.deleted.sections[k]; changed = true;
+                }
+            }
+        }
+    }
+    for (const g of Object.keys(sections)) addBack('groups', g, L.groups);
+    for (const n of L.notes) if (n.folder && isSyncName(n.folder)) addBack('noteFolders', n.folder, L.noteFolders);
+    L.sections = sections;
+
+    ls.seen[opts.remoteId] = seen;
+    if (conflicts.length) {
+        const fresh = new Set(conflicts.map(c => c.list + ':' + c.id));
+        ls.conflicts = conflicts.concat(ls.conflicts.filter(c => !fresh.has(c.list + ':' + c.id))).slice(0, SYNC_CONFLICTS_KEEP);
+    }
+    pruneDeleted(ls, nowMs);
+    return { data: L, changed: changed || conflicts.length > 0, conflicts };
+}
+
+// What this computer writes to its file in the sync folder: the records and names plus what the
+// merge needs. Settings, seen and conflicts stay on this computer.
+function buildSyncFile() {
+    const s = data._sync;
+    return JSON.stringify({
+        _app: 'Jot', format: SYNC_FORMAT, appVersion: APP_VERSION,
+        deviceId: syncInfo.deviceId, deviceName: syncInfo.deviceName, writtenAt: new Date().toISOString(),
+        data: {
+            todos: data.todos, notes: data.notes, groups: data.groups, sections: data.sections, noteFolders: data.noteFolders,
+            _sync: { deleted: s.deleted, addedAt: s.addedAt, orderAt: s.orderAt },
+        },
+    });
+}
+
+// Read another computer's sync file text. Returns { ok, data, deviceId, deviceName, writtenAt } or
+// { ok: false, reason }. A file from a newer Jot is skipped, never half-read.
+function parseSyncFile(text) {
+    let f;
+    try { f = JSON.parse(text); } catch (e) { return { ok: false, reason: 'unreadable' }; }
+    if (!f || typeof f !== 'object' || f._app !== 'Jot' || !f.data || typeof f.data !== 'object') return { ok: false, reason: 'not-jot' };
+    if (typeof f.format !== 'number' || f.format > SYNC_FORMAT) return { ok: false, reason: 'newer', appVersion: String(f.appVersion || '').slice(0, 20) };
+    if (!isSavedId(f.deviceId)) return { ok: false, reason: 'not-jot' };
+    const d = migrateData(f.data);
+    d._sync.seen = {};
+    d._sync.conflicts = [];
+    return { ok: true, data: d, deviceId: f.deviceId, deviceName: String(f.deviceName || 'other computer').slice(0, 80), writtenAt: syncTime(f.writtenAt) };
+}
+
+// ===== SYNC: READING AND WRITING THE FOLDER =====
+// The main process owns the folder and the files; the page sends its own file's text and gets the
+// other computers' files back. Writes wait 5 seconds for more changes. Reads happen at startup,
+// when the window gets focus, every 3 minutes, when the folder reports a change, and after a note
+// is closed.
+let syncRunning = null, syncAgain = false, syncRetryTimer = null;
+let syncLast = { at: null, devices: [], problem: null };
+
+function syncApi(name) { return window.widgetAPI && typeof window.widgetAPI[name] === 'function' ? window.widgetAPI[name] : null; }
+
+function scheduleSyncWrite() {
+    if (!syncInfo.enabled || !syncApi('syncWrite')) return;
+    if (syncWriteTimer) clearTimeout(syncWriteTimer);
+    syncWriteTimer = setTimeout(writeSyncNow, 5000);
+}
+function writeSyncNow() {
+    if (syncWriteTimer) { clearTimeout(syncWriteTimer); syncWriteTimer = null; }
+    const write = syncApi('syncWrite');
+    if (!syncInfo.enabled || !write) return Promise.resolve();
+    return Promise.resolve(write(buildSyncFile())).then(r => {
+        syncLast.problem = r && r.error ? r.error : (syncLast.problem && syncLast.problem.startsWith('Could not write') ? null : syncLast.problem);
+        renderSyncStatus();
+    }).catch(() => {});
+}
+
+// Typing in a task editor, a prompt or a search box holds on to the data as it is, so a merge
+// waits. Typing in the open note is fine: the merge leaves that note alone.
+function syncBusy() {
+    if (document.querySelector('.modal-overlay.active:not(#syncConflictsModal)')) return true;
+    if (dragSectionSrc) return true;
+    const a = document.activeElement;
+    if (!a || a === document.body) return false;
+    const typing = (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(a.type)) || a.tagName === 'TEXTAREA' || a.isContentEditable;
+    if (!typing) return false;
+    if (editingNoteId && a.closest && a.closest('#noteEditor')) return false;
+    return true;
+}
+
+function runSync() {
+    const read = syncApi('syncRead');
+    if (!syncInfo.enabled || !read) return Promise.resolve();
+    if (syncRunning) { syncAgain = true; return syncRunning; }
+    syncRunning = (async () => {
+        const res = await read();
+        if (!res || res.error) {
+            syncLast.problem = (res && res.error) || 'Could not read the sync folder.';
+            renderSyncStatus();
+            return;
+        }
+        if (syncBusy()) {   // try again shortly
+            if (syncRetryTimer) clearTimeout(syncRetryTimer);
+            syncRetryTimer = setTimeout(runSync, 15000);
+            return;
+        }
+        // Everything from here to the save runs without waiting, so no edit can land in between
+        let merged = data, changed = false, fresh = 0;
+        const devices = [], problems = [];
+        for (const file of res.files || []) {
+            const p = parseSyncFile(file.text);
+            if (!p.ok) {
+                if (p.reason === 'newer') problems.push(`A computer is running a newer Jot${p.appVersion ? ' (' + p.appVersion + ')' : ''}. Update Jot here to sync with it.`);
+                continue;
+            }
+            if (p.deviceId === syncInfo.deviceId) continue;
+            const out = mergeSync(merged, p.data, {
+                localId: syncInfo.deviceId, localName: syncInfo.deviceName || 'this computer',
+                remoteId: p.deviceId, remoteName: p.deviceName, lockedNoteId: editingNoteId,
+            });
+            merged = out.data;   // always, so what was seen from that computer is kept
+            if (out.changed) changed = true;
+            fresh += out.conflicts.length;
+            devices.push(p.deviceName);
+        }
+        if (changed) {
+            // A copy of the data from before the merge, in case the merge isn't what you wanted
+            const backup = syncApi('syncBackup');
+            if (backup) { try { backup(JSON.stringify({ ...data, _app: 'Jot', _v: 1, _beforeSync: true })); } catch (e) {} }
+        }
+        replaceAllDataAfterMerge(merged);
+        saveData();
+        syncLast = { at: new Date().toISOString(), devices, problem: problems[0] || null };
+        if (changed) {
+            refreshGroupSelectors();
+            refreshSectionSelect();
+            renderTodos();
+            if (!editingNoteId) renderNotes();
+            writeSyncNow();   // so a third computer sees the merged result too
+        }
+        renderSyncStatus();
+        if (fresh) showSyncConflictBanner();
+    })().catch(e => {
+        syncLast.problem = 'Sync failed: ' + String((e && e.message) || e).slice(0, 80);
+        renderSyncStatus();
+    }).finally(() => {
+        syncRunning = null;
+        if (syncAgain) { syncAgain = false; runSync(); }
+    });
+    return syncRunning;
+}
+// After a merge the merged data is what this computer has; it isn't an edit made here.
+function replaceAllDataAfterMerge(merged) {
+    data = merged;
+    resetTracking();
+}
+
+// ----- Settings > Data > Sync -----
+function timeAgoShort(iso) {
+    const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
+    if (!(s >= 0)) return 'just now';
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' days ago';
+}
+function renderSyncStatus() {
+    const text = document.getElementById('syncStatusText');
+    if (!text) return;
+    const on = !!syncInfo.enabled;
+    document.getElementById('syncOffControls').style.display = on ? 'none' : '';
+    document.getElementById('syncOnControls').style.display = on ? '' : 'none';
+    const n = (data._sync.conflicts || []).length;
+    const rev = document.getElementById('syncReviewBtn');
+    if (rev) { rev.style.display = n ? '' : 'none'; rev.textContent = `Review ${n} conflict${n === 1 ? '' : 's'}`; }
+    if (!on) {
+        text.textContent = 'Off. Keep Jot the same on your computers through a cloud drive. Settings and themes stay separate on each computer.';
+        return;
+    }
+    let msg = syncInfo.dir || '';
+    if (syncInfo.error) msg += ` (${syncInfo.error})`;
+    else if (syncLast.problem) msg += ` (${syncLast.problem})`;
+    else if (syncLast.at) {
+        const who = syncLast.devices.length ? ' with ' + syncLast.devices.join(', ') : ', no other computer yet';
+        msg += ` (synced ${timeAgoShort(syncLast.at)}${who})`;
+    }
+    text.textContent = msg;
+}
+function applySyncInfo(info) {
+    const was = syncInfo.enabled;
+    syncInfo = Object.assign({ enabled: false, deviceId: '', deviceName: '' }, info || {});
+    if (!syncInfo.enabled) syncLast = { at: null, devices: [], problem: null };
+    renderSyncStatus();
+    if (syncInfo.enabled && !was) { writeSyncNow(); runSync(); }
+}
+function refreshSync() {
+    const get = syncApi('getSync');
+    if (!get) return Promise.resolve();
+    return Promise.resolve(get()).then(applySyncInfo).catch(() => {});
+}
+// The drives list comes from the main process; the page only ever sends back the chosen number.
+function refreshSyncDrives() {
+    const list = syncApi('listSyncDrives'), sel = document.getElementById('syncDriveSelect');
+    if (!list || !sel) return Promise.resolve();
+    return Promise.resolve(list()).then(drives => {
+        sel.innerHTML = (drives || []).map(d =>
+            `<option value="${escapeAttr(String(d.id))}" title="${escapeAttr(d.path || '')}">${escapeHtml(d.name)}</option>`).join('') +
+            '<option value="other">Other folder…</option>';
+    }).catch(() => {});
+}
+function startSync() {
+    const sel = document.getElementById('syncDriveSelect');
+    const v = sel ? sel.value : 'other';
+    if (typeof guardBlur === 'function') guardBlur();
+    const call = v === 'other' ? syncApi('chooseSyncFolder') : syncApi('useSyncDrive');
+    if (!call) return Promise.resolve();
+    flushNoteSave();
+    return Promise.resolve(v === 'other' ? call() : call(Number(v))).then(applySyncInfo).catch(() => {});
+}
+function stopSync() {
+    const stop = syncApi('stopSync');
+    if (!stop) return Promise.resolve();
+    return Promise.resolve(writeSyncNow()).then(() => stop()).then(applySyncInfo).catch(() => {});
+}
+function syncNow() {
+    flushNoteSave();
+    return Promise.resolve(writeSyncNow()).then(runSync);
+}
+function openSyncFolder() { const o = syncApi('openSyncFolder'); if (o) o(); }
+
+// ----- Conflicts -----
+function showSyncConflictBanner() {
+    const n = (data._sync.conflicts || []).length;
+    const banner = document.getElementById('syncConflictBanner');
+    if (!banner) return;
+    if (!n) { banner.classList.remove('show'); return; }
+    document.getElementById('syncConflictText').textContent =
+        `Sync found ${n} change${n === 1 ? '' : 's'} made on both computers. The newer version was kept.`;
+    banner.classList.add('show');
+}
+function conflictLabel(list, rec) {
+    if (!rec) return '(deleted)';
+    const s = list === 'notes' ? (rec.title || (rec.body || '').split('\n')[0] || 'Untitled note') : (rec.text || 'Untitled task');
+    return String(s).slice(0, 120);
+}
+// What the other version says: a note's text (its title is usually the same), or a task's text
+function conflictPreview(list, rec) {
+    const s = list === 'notes' ? String(rec.body || '').replace(/\s+/g, ' ').trim() || '(empty note)' : (rec.text || '');
+    return s.length > 160 ? s.slice(0, 160) + '…' : s;
+}
+function fmtWhen(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+let syncConflictsOpener = null;
+function openSyncConflicts() {
+    const modal = document.getElementById('syncConflictsModal');
+    if (!modal) return;
+    renderSyncConflicts();
+    if (!modal.classList.contains('active')) syncConflictsOpener = document.activeElement;
+    modal.classList.add('active');
+    document.getElementById('syncConflictsClose').focus();
+}
+function closeSyncConflicts() {
+    const modal = document.getElementById('syncConflictsModal');
+    if (!modal || !modal.classList.contains('active')) return;
+    modal.classList.remove('active');
+    const back = syncConflictsOpener;
+    syncConflictsOpener = null;
+    if (back && back.isConnected && typeof back.focus === 'function') back.focus();
+}
+function renderSyncConflicts() {
+    const box = document.getElementById('syncConflictList');
+    const list = data._sync.conflicts || [];
+    if (!list.length) { box.innerHTML = '<div class="sync-conflict-empty">Nothing to review.</div>'; return; }
+    box.innerHTML = list.map((c, i) => {
+        const current = data[c.list].find(r => r.id === c.id);
+        const kind = c.list === 'notes' ? 'Note' : 'Task';
+        const what = c.deleted
+            ? `Deleted on ${escapeHtml(c.kept)} after it was changed on ${escapeHtml(c.otherFrom)}.`
+            : `Kept the newer version from ${escapeHtml(c.kept)}. The other version, from ${escapeHtml(c.otherFrom)}, changed ${escapeHtml(fmtWhen(c.other.updatedAt || c.at))}.`;
+        const buttons = c.deleted
+            ? `<button class="filter-btn" onclick="resolveSyncConflict(${i}, 'other')">Restore it</button>`
+            : `<button class="filter-btn" onclick="resolveSyncConflict(${i}, 'other')">Use the other version</button>` +
+              (c.list === 'notes' ? `<button class="filter-btn" onclick="resolveSyncConflict(${i}, 'both')">Keep both</button>` : '');
+        return `<div class="sync-conflict">
+            <div class="sync-conflict-title">${kind}: ${escapeHtml(conflictLabel(c.list, current || c.other))}</div>
+            <div class="sublabel">${what}</div>
+            ${!c.deleted && current ? `<div class="sync-conflict-other">Other version: ${escapeHtml(conflictPreview(c.list, c.other))}</div>` : ''}
+            <div class="sync-conflict-actions">${buttons}<button class="filter-btn" onclick="resolveSyncConflict(${i}, 'dismiss')">Dismiss</button></div>
+        </div>`;
+    }).join('');
+}
+// 'other' puts the other version in place (or back, if it was deleted), 'both' adds the other
+// version as a separate note, 'dismiss' keeps what's there. The first two are ordinary edits, so
+// they sync to the other computer like any change.
+function resolveSyncConflict(i, how) {
+    const list = data._sync.conflicts || [];
+    const c = list[i];
+    if (!c) return;
+    list.splice(i, 1);
+    if (how === 'other' || how === 'both') {
+        if (c.list === 'notes' && editingNoteId === c.id) closeNoteEditor();
+        const rec = JSON.parse(JSON.stringify(c.other));
+        if (how === 'both') {
+            rec.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            rec.title = (rec.title || 'Untitled note') + ` (from ${c.otherFrom})`;
+            data.notes.unshift(rec);
+        } else {
+            const idx = data[c.list].findIndex(r => r.id === c.id);
+            if (idx >= 0) data[c.list][idx] = rec; else data[c.list].unshift(rec);
+            if (c.list === 'todos') {
+                if (rec.group && !data.groups.includes(rec.group)) data.groups.push(rec.group);
+                if (rec.group && rec.section) {
+                    data.sections[rec.group] = data.sections[rec.group] || [];
+                    if (!data.sections[rec.group].includes(rec.section)) data.sections[rec.group].push(rec.section);
+                }
+            } else if (rec.folder && !data.noteFolders.includes(rec.folder)) data.noteFolders.push(rec.folder);
+        }
+        refreshGroupSelectors();
+        refreshSectionSelect();
+    }
+    saveData();
+    renderTodos();
+    if (!editingNoteId) renderNotes();
+    renderSyncConflicts();
+    renderSyncStatus();
+    showSyncConflictBanner();
+    if (!list.length) document.getElementById('syncConflictsClose').focus();
 }
 
 function saveData() {
@@ -2006,6 +2693,7 @@ function saveData() {
     // Jot carried on as if it had saved, and later changes were lost when it quit. Catch it and
     // show a banner until a save works again.
     let failure = null;
+    const syncChanged = trackChanges();
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
@@ -2015,6 +2703,7 @@ function saveData() {
     showSaveError(failure);
     updateBadge();
     syncReminders();
+    if (syncChanged) scheduleSyncWrite();
 }
 
 // Show or clear the banner that says saving failed (err null = the last save worked).
@@ -2157,7 +2846,7 @@ function importData(event) {
             if (!imported.todos && !imported.notes) throw new Error('Not a Jot backup');
             if (!confirm('Restore this backup? It will replace your current tasks and notes.')) return;
             flushNoteSave();   // a waiting note save must not land in the restored data later
-            data = migrateData(imported);
+            replaceAllData(migrateData(imported));
             saveData();
             refreshGroupSelectors();
             refreshSectionSelect();   // drops a picked section that the restored groups don't have
@@ -2291,6 +2980,7 @@ function expandApp() {
 
 function collapseToWidget() {
     if (typeof closeShortcuts === 'function') closeShortcuts();   // the list doesn't fit the widget
+    if (typeof closeSyncConflicts === 'function') closeSyncConflicts();
     flushNoteSave();   // save a note edit still waiting for typing to pause
     document.body.classList.add('widget-mode');
     document.getElementById('app').style.display = 'none';
@@ -4064,6 +4754,7 @@ function closeNoteEditor() {
     document.querySelector('#tab-notes .toolbar').style.display = '';
     { const fb = document.getElementById('noteFolderBar'); if (fb) fb.style.display = ''; }
     renderNotes();
+    runSync();   // the note was left alone while it was open
 }
 
 // ===== IN-NOTE FIND (Ctrl+F) =====
@@ -5695,6 +6386,7 @@ document.addEventListener('keydown', (e) => {
     // editor also collapsed Jot, and Escape in a note's find box also closed the note.
     if (e.key === 'Escape' && !e.defaultPrevented) {
         if (document.getElementById('shortcutsModal').classList.contains('active')) closeShortcuts();
+        else if (document.getElementById('syncConflictsModal').classList.contains('active')) closeSyncConflicts();
         else if (document.getElementById('promptModal').classList.contains('active')) closePromptModal();
         else if (document.getElementById('scheduleModal').classList.contains('active')) closeScheduleModal();
         else if (editingNoteId) closeNoteEditor();
@@ -5867,6 +6559,8 @@ function renderSettings() {
     }
 
     refreshCloudBackup();
+    refreshSyncDrives();
+    refreshSync();
 
     // Reminders toggle
     document.getElementById('remindersToggle').classList.toggle('on', !!(data.settings && data.settings.reminders));
@@ -5925,8 +6619,11 @@ function applyCustomAccent(color) {
 
 // Reset everything to defaults (with confirmation)
 function resetAllData() {
-    if (!confirm('Reset Jot to defaults? This permanently deletes ALL tasks, notes, groups, and sections. Consider backing up first.')) return;
-    data = migrateData({});
+    const syncNote = syncInfo.enabled
+        ? '\n\nSync is on, so the tasks and notes on your other computer will come back at the next sync. To start fresh everywhere, stop syncing on both computers first.'
+        : '';
+    if (!confirm('Reset Jot to defaults? This permanently deletes ALL tasks, notes, groups, and sections. Consider backing up first.' + syncNote)) return;
+    replaceAllData(migrateData({}));
     selectedIds.clear();
     collapsedSections.clear();
     saveData();
@@ -6055,6 +6752,11 @@ setInterval(refreshDateUI, 60 * 1000);
 window.addEventListener('beforeunload', () => {
     try { flushNoteSave(); } catch (e) {}   // a note edit still waiting for typing to pause
     try { saveData(); } catch (e) {}
+    // Write this computer's sync file now: the usual 5-second wait would be cut off by quitting
+    try {
+        const write = syncApi('syncWriteBeforeQuit');
+        if (syncInfo.enabled && write) { if (syncWriteTimer) clearTimeout(syncWriteTimer); write(buildSyncFile()); }
+    } catch (e) {}
 });
 
 // Auto-link URLs on paste into the note body, and keep links clickable
@@ -6251,6 +6953,19 @@ if (window.widgetAPI) {
     // Retry every 6 hours so a session that stays open past midnight still
     // produces that day's backup (main process de-dupes to once per day).
     setInterval(doAutoBackup, 6 * 60 * 60 * 1000);
+
+    // Sync: read at startup, on focus, every 3 minutes and when the folder reports a change
+    refreshSync();
+    showSyncConflictBanner();
+    setInterval(() => { runSync(); }, 3 * 60 * 1000);
+    window.addEventListener('focus', () => { runSync(); });
+    if (syncApi('onSyncChanged')) {
+        let changedTimer = null;
+        window.widgetAPI.onSyncChanged(() => {
+            if (changedTimer) clearTimeout(changedTimer);
+            changedTimer = setTimeout(() => { runSync(); }, 2000);   // the drive may still be writing
+        });
+    }
 
     // Click-away → collapse to widget (unless a dialog is open or editing a note)
     if (window.widgetAPI.onCollapseOnBlur) {

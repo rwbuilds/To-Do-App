@@ -700,6 +700,199 @@ ipcMain.on('open-cloud-backup-folder', () => {
   if (dir && fs.existsSync(dir)) require('electron').shell.openPath(dir);
 });
 
+// ===== SYNC BETWEEN COMPUTERS =====
+// Each computer writes only its own file, jot-<device id>.json, in a shared cloud folder, and reads
+// the others. The merging happens in the page; this side only moves files. The folder path lives in
+// jot-settings.json on each computer and never comes from the page: the page picks a drive by its
+// number in the list below, or the native folder picker picks the folder.
+const SYNC_FOLDER_NAME = 'Jot Sync';
+const SYNC_MAX_FILE = 50 * 1024 * 1024;   // a sync file bigger than this is refused, not read
+const SYNC_MAX_FILES = 20;
+
+// This computer's sync ID and name, made once and kept in jot-settings.json
+function syncDevice() {
+  const s = loadSettings();
+  let id = typeof s.syncDeviceId === 'string' && /^[a-f0-9]{16}$/.test(s.syncDeviceId) ? s.syncDeviceId : null;
+  if (!id) { id = require('crypto').randomBytes(8).toString('hex'); saveSettings({ syncDeviceId: id }); }
+  const kind = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows' : 'Linux';
+  const host = machineTag();
+  return { id, name: host && host !== 'computer' ? `${kind} (${host})` : kind };
+}
+
+// Cloud drives this computer has, found where each app keeps its folder. Each entry is
+// { name, path }; the page only ever sees and returns its position in this list.
+function listCloudDrives() {
+  const os = require('os');
+  const home = os.homedir();
+  const out = [];
+  const add = (name, p) => {
+    try { if (p && fs.statSync(p).isDirectory() && !out.some(d => d.path === p)) out.push({ name, path: p }); } catch (e) {}
+  };
+  if (process.platform === 'darwin') {
+    add('iCloud Drive', path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs'));
+    const cs = path.join(home, 'Library', 'CloudStorage');
+    let entries = [];
+    try { entries = fs.readdirSync(cs).sort(); } catch (e) {}
+    for (const e of entries) {
+      const p = path.join(cs, e);
+      const rest = e.replace(/^[A-Za-z]+-?/, '').trim();
+      const suffix = rest ? ` (${rest})` : '';
+      if (/^OneDrive/i.test(e)) add('OneDrive' + suffix, p);
+      else if (/^GoogleDrive/i.test(e)) add('Google Drive' + suffix, fs.existsSync(path.join(p, 'My Drive')) ? path.join(p, 'My Drive') : p);
+      else if (/^Dropbox/i.test(e)) add('Dropbox' + suffix, p);
+      else if (/^Box/i.test(e)) add('Box' + suffix, p);
+    }
+    add('Dropbox', path.join(home, 'Dropbox'));
+  } else if (process.platform === 'win32') {
+    add('OneDrive (personal)', process.env.OneDriveConsumer);
+    add('OneDrive (work or school)', process.env.OneDriveCommercial);
+    add('OneDrive', process.env.OneDrive);
+    add('iCloud Drive', path.join(home, 'iCloudDrive'));
+    add('Dropbox', path.join(home, 'Dropbox'));
+    add('Google Drive', 'G:\\My Drive');
+    add('Google Drive', path.join(home, 'Google Drive'));
+    add('Box', path.join(home, 'Box'));
+  }
+  return out;
+}
+
+let syncError = null;   // last read/write problem, shown in Settings
+function syncStatus() {
+  const dir = loadSettings().syncDir || null;
+  const dev = syncDevice();
+  return { enabled: !!dir, dir, available: !!dir && fs.existsSync(dir), deviceId: dev.id, deviceName: dev.name,
+    error: dir && !fs.existsSync(dir) ? 'Folder not found. Is the cloud drive signed in?' : syncError };
+}
+
+// Watch the folder so a change from the other computer shows up within seconds. fs.watch isn't
+// reliable on every platform or cloud drive, so the page also reads every 3 minutes.
+let syncWatcher = null, syncWatchTimer = null;
+function watchSyncFolder() {
+  if (syncWatcher) { try { syncWatcher.close(); } catch (e) {} syncWatcher = null; }
+  const dir = loadSettings().syncDir;
+  if (!dir || !fs.existsSync(dir)) return;
+  const own = `jot-${syncDevice().id}.json`;
+  try {
+    syncWatcher = fs.watch(dir, (ev, file) => {
+      if (file && (String(file) === own || !/^jot-[a-f0-9]{16}\.json$/.test(String(file)))) return;
+      if (syncWatchTimer) clearTimeout(syncWatchTimer);
+      syncWatchTimer = setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sync-changed');
+      }, 1000);
+    });
+    syncWatcher.on('error', () => { try { syncWatcher.close(); } catch (e) {} syncWatcher = null; });
+  } catch (e) { syncWatcher = null; }
+}
+
+function setSyncDir(dir) {
+  saveSettings({ syncDir: dir || null });
+  syncError = null;
+  watchSyncFolder();
+  return syncStatus();
+}
+
+ipcMain.handle('get-sync', () => syncStatus());
+ipcMain.handle('list-sync-drives', () => listCloudDrives().map((d, i) => ({ id: i, name: d.name, path: d.path })));
+
+// Use a "Jot Sync" folder inside one of the drives found above
+ipcMain.handle('use-sync-drive', (event, index) => {
+  const drives = listCloudDrives();
+  const d = Number.isInteger(index) ? drives[index] : null;
+  if (!d) return syncStatus();
+  const dir = path.join(d.path, SYNC_FOLDER_NAME);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { syncError = 'Could not create the Jot Sync folder there.'; return syncStatus(); }
+  return setSyncDir(dir);
+});
+
+// Any folder, picked in the system's folder picker
+ipcMain.handle('choose-sync-folder', async () => {
+  const { dialog } = require('electron');
+  suppressCollapse = true;
+  try {
+    const opts = { title: 'Choose a folder to sync Jot through', properties: ['openDirectory', 'createDirectory'] };
+    const res = (mainWindow && !mainWindow.isDestroyed()) ? await dialog.showOpenDialog(mainWindow, opts) : await dialog.showOpenDialog(opts);
+    if (!res || res.canceled || !res.filePaths || !res.filePaths[0]) return syncStatus();
+    return setSyncDir(res.filePaths[0]);
+  } finally {
+    setTimeout(() => { suppressCollapse = false; }, 500);
+  }
+});
+
+ipcMain.handle('stop-sync', () => setSyncDir(null));
+
+ipcMain.on('open-sync-folder', () => {
+  const dir = loadSettings().syncDir;
+  if (dir && fs.existsSync(dir)) require('electron').shell.openPath(dir);
+});
+
+// Write this computer's file: temp file then rename, like the backups. Returns { ok } or { error }.
+function writeSyncFile(text) {
+  const dir = loadSettings().syncDir;
+  if (!dir) return { error: 'Sync is off.' };
+  if (!fs.existsSync(dir)) return { error: 'Folder not found. Is the cloud drive signed in?' };
+  if (typeof text !== 'string' || text.length > SYNC_MAX_FILE) return { error: 'Could not write: the data is too large.' };
+  try { const f = JSON.parse(text); if (!f || f._app !== 'Jot') return { error: 'Could not write: not Jot data.' }; } catch (e) { return { error: 'Could not write: not Jot data.' }; }
+  const file = path.join(dir, `jot-${syncDevice().id}.json`);
+  try {
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+    syncError = null;
+    return { ok: true };
+  } catch (e) {
+    syncError = 'Could not write to the folder.';
+    return { error: syncError };
+  }
+}
+ipcMain.handle('sync-write', (event, text) => writeSyncFile(text));
+// On quit the page can't wait for a reply, so this one is synchronous
+ipcMain.on('sync-write-before-quit', (event, text) => { event.returnValue = writeSyncFile(text); });
+
+// Read the other computers' files. A file that can't be read right now (a cloud drive still
+// downloading it, a lock) is skipped this time and read again on the next sync; it's never
+// treated as empty.
+ipcMain.handle('sync-read', async () => {
+  const dir = loadSettings().syncDir;
+  if (!dir) return { error: 'Sync is off.' };
+  if (!fs.existsSync(dir)) return { error: 'Folder not found. Is the cloud drive signed in?' };
+  const own = `jot-${syncDevice().id}.json`;
+  let names;
+  try { names = (await fs.promises.readdir(dir)).filter(f => /^jot-[a-f0-9]{16}\.json$/.test(f) && f !== own).sort(); }
+  catch (e) { syncError = 'Could not read the sync folder.'; return { error: syncError }; }
+  const files = [];
+  for (const name of names.slice(0, SYNC_MAX_FILES)) {
+    const p = path.join(dir, name);
+    try {
+      const st = await fs.promises.stat(p);
+      if (!st.isFile() || st.size > SYNC_MAX_FILE) continue;
+      const text = await Promise.race([
+        fs.promises.readFile(p, 'utf8'),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
+      ]);
+      files.push({ name, text });
+    } catch (e) { /* try again next time */ }
+  }
+  syncError = null;
+  return { files };
+});
+
+// A copy of the data from before a merge that changed something, kept in <userData>/backups
+// (the last 10)
+ipcMain.on('sync-backup', (event, jsonString) => {
+  try {
+    if (typeof jsonString !== 'string' || jsonString.length > SYNC_MAX_FILE) return;
+    JSON.parse(jsonString);
+    const dir = path.join(app.getPath('userData'), 'backups');
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(dir, `jot-before-sync-${stamp}-${require('crypto').randomBytes(2).toString('hex')}.json`);
+    fs.writeFileSync(file + '.tmp', jsonString);
+    fs.renameSync(file + '.tmp', file);
+    fs.readdirSync(dir).filter(f => /^jot-before-sync-[\dTZa-f-]+\.json$/.test(f)).sort().reverse().slice(10)
+      .forEach(f => { try { fs.unlinkSync(path.join(dir, f)); } catch (e) {} });
+  } catch (e) { /* non-fatal */ }
+});
+
 // Let the renderer open the backups folder from the UI
 ipcMain.on('open-backups-folder', () => {
   const dir = path.join(app.getPath('userData'), 'backups');
@@ -864,6 +1057,7 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+  watchSyncFolder();
 
   // Auto-updates from GitHub Releases (packaged builds only). Checks on launch
   // and periodically; installs on next quit. Wrapped so a failure never crashes.

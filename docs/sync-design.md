@@ -1,6 +1,7 @@
 # Syncing Jot between the Mac and the Windows PC
 
-Status: proposal. Nothing here is built yet. The decisions it needs are listed at the end.
+Status: built in 1.7.0. Settings > Data > Sync between computers. The decisions below are
+recorded under "Decisions" at the end, and where the build differs from this proposal it says so.
 
 ## The problem
 
@@ -141,11 +142,24 @@ Windows" or the last error.
 
 After that, a trial on both machines with a new, empty folder, after exporting a backup on each.
 
-## Decisions needed
+## Decisions
 
-1. Which cloud drive? OneDrive runs on both machines. iCloud Drive needs the iCloud for Windows
-   app on the PC. If Jot holds any work information, check first that it's allowed in that
-   drive. I don't know what your tasks and notes contain, so that check is yours.
-2. When both machines edit the same note: keep both versions (proposed), or let the newer one win?
-3. Settings: keep them per machine (proposed), or sync the theme?
-4. Can step 1 ship in a release before the rest is built?
+1. Cloud drive: any. Settings lists the drives this computer has (iCloud Drive, OneDrive personal
+   and work, Google Drive, Dropbox, Box), found where each app keeps its folder, plus "Other
+   folder…" for anything else. Jot makes a "Jot Sync" folder in the chosen drive. Both computers
+   have to pick the same drive. The page only sends back the drive's number in that list, never a
+   path. Whether work information is allowed in a given drive is still the user's call; Settings
+   says so.
+2. Both computers edited the same item: the newer version wins, and the conflict is flagged. A
+   banner says what happened, and Settings > Data > Review conflicts lists each one with both
+   versions: "Use the other version", "Keep both" (notes) or "Dismiss". An item deleted on one
+   computer after it was edited on the other is flagged the same way, with "Restore it". Before
+   the first sync there's no record of who changed what, so only notes are flagged then; tasks
+   quietly take the newer version.
+3. Settings and themes stay per computer. The sync folder, the computer's sync ID and the window
+   position live in jot-settings.json, which never syncs.
+4. Shipped all at once in 1.7.0, not in steps.
+
+Other differences from the proposal: Restore and Reset aren't treated as deletes (a restore on one
+computer can't wipe the other), group, section and folder names record when they were added, and a
+merge waits while you're typing in a task editor or search box.

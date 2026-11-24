@@ -14,7 +14,9 @@ const windows = [];
 
 setTimeout(() => { console.log('WATCHDOG: test did not finish within 50s'); finish(3); }, 50000).unref();
 
-function open(pagePath, { seed, rawSeed } = {}) {
+// api: optional (window) => object of widgetAPI methods, installed before the page runs. Anything
+// it doesn't define is a no-op that returns a resolved promise, like a main process that ignores it.
+function open(pagePath, { seed, rawSeed, api } = {}) {
     const html = fs.readFileSync(pagePath || PAGE, 'utf8');
     const errors = [];
     const vc = new VirtualConsole();
@@ -35,6 +37,10 @@ function open(pagePath, { seed, rawSeed } = {}) {
             w.alerts = [];
             w.alert = m => w.alerts.push(String(m));
             if (!w.matchMedia) w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+            if (api) {
+                const own = api(w);
+                w.widgetAPI = new Proxy(own, { get: (t, k) => (k in t ? t[k] : () => Promise.resolve(undefined)) });
+            }
             w.Element.prototype.scrollIntoView = function () {};
             w.scrollTo = () => {};
             // jsdom has no innerText; Jot's note word count reads it
