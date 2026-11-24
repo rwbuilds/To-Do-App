@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Content-Security-Policy. The page's script and its onclick handlers are inline, so inline
+         script has to stay allowed. Everything else is shut: no scripts, styles, frames, plugins or
+         network requests from anywhere. Notes keep pasted images, so https: and data: images load.
+         If note HTML ever got past the sanitizer, it still couldn't load code or send data out. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Jot</title>
     <style>
         :root {

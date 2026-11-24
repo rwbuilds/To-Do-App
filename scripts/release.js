@@ -106,5 +106,5 @@ try {
 } catch (e) {
   fail('the push failed. The release commit exists locally; fix the problem, then run: git push origin main');
 }
-console.log(`\nReleased v${version}. GitHub Actions will build and publish the Windows release.`);
-console.log('Mac app: npm run package, then codesign --force --deep --sign - the .app in out/ and copy it to /Applications.');
+console.log(`\nReleased v${version}. GitHub Actions will build the Windows installer and the Mac DMG and publish both`);
+console.log('as one Release: https://github.com/rwbuilds/To-Do-App/releases (Mac: install the new DMG by hand).');
